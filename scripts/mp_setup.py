@@ -62,15 +62,16 @@ def req(method, path, body=None, tok=None):
 def main():
     tok = token()
     st, orgs = req("GET", "/v1/organizations", tok=tok)
-    if st != 200 or not orgs:
-        sys.exit(f"Could not list organisations ({st}): {orgs}")
+    orgs = orgs if st == 200 and isinstance(orgs, list) else []  # some tokens may list projects but not organisations
     st, projects = req("GET", "/v1/projects", tok=tok)
     if st != 200:
         sys.exit(f"Could not list projects ({st}): {projects}")
     proj = next((p for p in projects if p.get("name") == NAME), None)
     if proj is None:
         prod = next((p for p in projects if p.get("id") == PRODUCTION_REF), None)
-        org = (prod or {}).get("organization_id") or orgs[0]["id"]
+        org = (prod or {}).get("organization_id") or (orgs[0]["id"] if orgs else None)
+        if not org:
+            sys.exit("Could not tell which organisation to create the project in.")
         HOME.mkdir(parents=True, exist_ok=True)
         pw_file = HOME / "dev-db-password"
         pw = pw_file.read_text().strip() if pw_file.exists() else secrets.token_urlsafe(24)
