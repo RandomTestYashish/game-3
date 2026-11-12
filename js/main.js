@@ -10,7 +10,7 @@ import { drawGame, drawHUD, hudRows } from './render.js';
 import { ui, beginUI, region, hitTest, pill, ghost, card, cardArt, roundBtn, iconBtn, slider, panel } from './ui.js';
 import { AudioSys, COURT_TRACKS, RUSH_TEMPO } from './audio.js';
 import { haptics } from './haptics.js';
-import { setupMultiplayer, openMultiplayer, bootMultiplayer, tickMultiplayer, drawOpponentHUD, onRunEnd, onCourtCleared, onPlayStarted, onPause, applyBroken, typing, typeChar, submitName, leaveMatch, MP_SCREENS, MP_SCREEN_NAMES, mp } from './multiplayer.js';
+import { setupMultiplayer, openMultiplayer, bootMultiplayer, tickMultiplayer, drawOpponentHUD, onRunEnd, onCourtCleared, onPlayStarted, onPause, applyBroken, typing, typeChar, submitName, leaveMatch, openFriendsBoard, friendsOn, MP_SCREENS, MP_SCREEN_NAMES, mp } from './multiplayer.js';
 import { Save, BOARD_SIZE, cleanName } from './save.js';
 import { onlineEnabled } from './config.js';
 import { fetchTopScores, submitScore, nameTaken } from './remote.js';
@@ -1489,7 +1489,7 @@ const SCREENS = {
         sparkle(tx + 5 + d * 10, y + 7, 1 + tw);
         sparkle(tx + 5 - d * 9, y + 23, 2 - tw, '#9fd0a8');
       }
-      // Tabs: GLOBAL is this board; FRIENDS is not built yet, and says so.
+      // Tabs: GLOBAL is this board (The Rally, everyone); FRIENDS is multiplayer's.
       const tabW = Math.floor((w - 30) / 2);
       const tabY = y + 33;
       rrect(W / 2 - 3 - tabW - 1, tabY - 1, tabW + 2, 17, 5, PAL.ink);
@@ -1497,11 +1497,14 @@ const SCREENS = {
       rrect(W / 2 - 3 - tabW, tabY, tabW, 14, 4, PAL.yellow);
       globe(W / 2 - 3 - tabW + 8, tabY + 1);
       text(online ? 'GLOBAL' : 'THIS DEVICE', W / 2 - 3 - tabW / 2 + 7, tabY + 4, PAL.ink, { align: 'center', sp: 1 });
+      // FRIENDS: the multiplayer friends board (wins against friends), a
+      // separate board from this one; until multiplayer is on, it says so.
       ghost('friends', 'FRIENDS', W / 2 + 3 + tabW / 2, tabY, tabW, 14, () => {
+        track('friends_tab_clicked');
+        if (friendsOn()) return openFriendsBoard('scores');
         s.note = 'FRIENDS BOARD COMING SOON';
         s.noteT = S.time;
-        track('friends_tab_clicked');
-      }, { color: PAL.dim, line: '#4d6b55', sp: 1 });
+      }, friendsOn() ? { sp: 1 } : { color: PAL.dim, line: '#4d6b55', sp: 1 });
       const refreshing = online && S.online.state === 'loading' && S.online.rows.length > 0;
       const loading = online && S.online.state === 'loading' && !refreshing;
       const failed = online && S.online.state === 'error';
@@ -1952,7 +1955,7 @@ function titleLayout() {
   const tall = H >= 440;
   const sig = sigBox();
   const ch = tall ? 36 : wide ? 32 : 28;
-  const gap = tall ? 8 : 6;
+  const gap = tall ? 10 : 6;
   const rowGap = tall ? 12 : 7;
   if (wide) {
     const cw = Math.min(206, Math.floor((W - 48) / 2));

@@ -17,8 +17,13 @@ let client = null;
 let starting = null;
 let offset = 0; // server clock minus this device's clock, in ms
 
-// Multiplayer needs the online project (the development project on game-3).
-export const mpEnabled = () => /^https:\/\//.test(CONFIG.supabaseUrl || '') && (CONFIG.supabaseAnonKey || '').length > 0 && CONFIG.multiplayer === true;
+// Multiplayer's own database: mpSupabaseUrl / mpSupabaseAnonKey when given
+// (a separate project from the Rally's leaderboard), else the same project.
+const mpUrl = () => CONFIG.mpSupabaseUrl || CONFIG.supabaseUrl || '';
+const mpKey = () => (CONFIG.mpSupabaseUrl ? CONFIG.mpSupabaseAnonKey : CONFIG.supabaseAnonKey) || '';
+
+// Multiplayer needs its online project (the development project on game-3).
+export const mpEnabled = () => /^https:\/\//.test(mpUrl()) && mpKey().length > 0 && !mpKey().startsWith('sb_secret_') && CONFIG.multiplayer === true;
 
 export const serverNow = () => Date.now() + offset;
 
@@ -42,7 +47,7 @@ export function connect() {
     starting = (async () => {
       try {
         await loadLib();
-        const c = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey, {
+        const c = window.supabase.createClient(mpUrl(), mpKey(), {
           auth: { persistSession: true, autoRefreshToken: true, storageKey: 'the-court.mp-auth', detectSessionInUrl: false },
           realtime: { params: { eventsPerSecond: 5 } },
         });
@@ -92,13 +97,14 @@ export async function call(fn, args = {}) {
   }
 }
 
-// Be told when the match or its players change. Returns an unsubscribe.
+// Be told when the match or its players change (the change itself is passed
+// on, so the caller can skip ones that matter to nobody). Returns an unsubscribe.
 export function watch(matchId, onChange) {
   if (!client) return () => {};
   const ch = client
     .channel('match-' + matchId)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'multiplayer_players', filter: 'match_id=eq.' + matchId }, () => onChange())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'multiplayer_matches', filter: 'id=eq.' + matchId }, () => onChange())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'multiplayer_players', filter: 'match_id=eq.' + matchId }, (p) => onChange(p))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'multiplayer_matches', filter: 'id=eq.' + matchId }, (p) => onChange(p))
     .subscribe();
   return () => {
     try {

@@ -1881,6 +1881,7 @@ STAND_IN = """;
     auth: { getSession: async () => ({ data: { session: {} } }) },
     channel: () => ({ on() { return this; }, subscribe() { return this; } }), removeChannel() {},
     rpc: async (fn, a) => {
+      if (fn === 'mp_leaderboard' || fn === 'mp_history') return { data: [] }; // empty boards
       if (fn !== 'mp_checkpoint') {
         // A status read: window.__state() may shape it; __stateFail fails that many (no network).
         if (window.__stateFail > 0) { window.__stateFail--; throw new Error('offline'); }
@@ -2099,6 +2100,53 @@ def match_time(browser, url):
         ctx.close()
 
 
+def invite_and_boards(browser, url):
+    """The challenge image is made and sent by Share and WhatsApp; The Rally's
+    FRIENDS tab is the multiplayer board; realtime only re-reads on real changes."""
+    print("multiplayer invite image and boards")
+    M = "window.__mp"
+    ctx, d = stand_in_match(browser, url)
+    # The Rally's leaderboard: GLOBAL is its own board; FRIENDS opens multiplayer's, and BACK returns.
+    d.ev("__court.S.board = { rank: -1, fromRun: false }; __court.go('scores')")
+    d.screen("scores", 0.6)
+    d.click("friends")
+    d.screen("mpboard", 0.4)
+    check("leaderboard: the FRIENDS tab opens the multiplayer friends board", d.ev("__court.S.screen") == "mpboard")
+    d.click("back")
+    d.screen("scores", 0.4)
+    check("…and BACK returns to The Rally's leaderboard", d.ev("__court.S.screen") == "scores")
+    # The invite screen with a match link: the image is made and shown.
+    d.ev(f"""Object.assign({M}, {{ matchId: 't', role: 'host', name: 'YASH', inviteUrl: 'https://example.test/game-3/?join=abc123', token: 'abc', polling: true, pollAt: Date.now() + 1e9,
+        state: {{ match: {{ id: 't', status: 'waiting', expires_at: Date.now() + 3500000 }}, me: {{ name: 'YASH', role: 'host', finished: false }}, opponent: null }} }}); __court.go('mpinvite')""")
+    d.screen("mpinvite", 0.6)
+    card = d.ev(f"(()=>{{ const c = {M}.invite && {M}.invite.canvas; return c ? [c.width, c.height, {M}.invite.file.name, {M}.invite.file.size] : null; }})()")
+    check("invite: the challenge image is made (1080 x 1350 PNG) and previewed", card and card[0] == 1080 and card[1] == 1350 and card[2] == "the-court-challenge.png" and card[3] > 5000, card)
+    # A phone (can share files): WhatsApp and Share both send the image with the message and link.
+    d.ev("""window.__shared = []; navigator.canShare = (o) => !!(o && o.files); navigator.share = (o) => { window.__shared.push({ files: (o.files || []).map(f => f.name), text: o.text || '', url: o.url || '' }); return Promise.resolve(); }; 0""")
+    d.click("mpwhatsapp")
+    d.click("mpshare")
+    shared = d.ev("window.__shared")
+    check("invite (phone): WHATSAPP and SHARE send the image with the message and link",
+          len(shared) == 2 and all(s["files"] == ["the-court-challenge.png"] and "YASH" in s["text"] and "join=abc123" in s["text"] for s in shared), shared)
+    # A laptop (cannot share files): WhatsApp opens with the message and the image is saved to attach.
+    d.ev("""navigator.canShare = () => false; window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; 0""")
+    with d.pg.expect_download() as dl:
+        d.click("mpwhatsapp")
+    opened = d.ev("window.__opened")
+    check("invite (laptop): WHATSAPP opens WhatsApp with the message and link, and saves the image",
+          len(opened) == 1 and opened[0].startswith("https://wa.me/?text=") and "join%3Dabc123" in opened[0] and dl.value.suggested_filename == "the-court-challenge.png", (opened, dl.value.suggested_filename))
+    # Realtime: a player's own heartbeat or an unchanged opponent does not trigger another read.
+    w = d.ev("""(async()=>{ const m = await import('/js/multiplayer.js'); const M = m.mp;
+        M.state = { match: { id: 't', status: 'active' }, me: { id: 'p1', finished: false }, opponent: { id: 'p2', score: 30, court: 1, lives: 3, finished: false, ready: true, connection: 'online', rematch: false, declined: false } };
+        const row = (o) => ({ table: 'multiplayer_players', new: { id: 'p2', score: 30, court: 1, lives: 3, finished_at: null, ready_at: 'x', connection_status: 'online', rematch_requested_at: null, rematch_declined_at: null, ...o } });
+        return [m._worthReading({ table: 'multiplayer_players', new: { id: 'p1', score: 0 } }), m._worthReading(row({})), m._worthReading(row({ score: 60 })),
+                m._worthReading(row({ lives: 2 })), m._worthReading({ table: 'multiplayer_matches', new: { id: 't' } })]; })()""")
+    check("realtime: our own row and an opponent's bare heartbeat do not trigger a read; a score, a life or the match does",
+          w == [False, False, True, True, True], w)
+    check("no console errors (invite image and boards)", not d.errors, d.errors[:3])
+    ctx.close()
+
+
 def main():
     srv = serve()
     url = f"http://127.0.0.1:{srv.server_address[1]}/?debug=1"
@@ -2126,6 +2174,7 @@ def main():
             checkpoint_retry(browser, url)
             final_update(browser, url)
             match_time(browser, url)
+            invite_and_boards(browser, url)
         finally:
             browser.close()
             srv.shutdown()

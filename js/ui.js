@@ -56,30 +56,18 @@ export function pill(id, label, cx, y, w, h, fn, o = {}) {
 // way in) or 'dark'. o.art(x, y, w, h, t) draws the icon in its slot.
 // The subtitle may hold one '•', drawn as a dot. Pressed, it sinks 2 pixels.
 export function card(id, title, sub, x, y, w, h, fn, o = {}) {
+  // Kept light on purpose: one outline, a 2-pixel lip, one highlight line,
+  // no glow (o.pulse is accepted but no longer drawn).
   const gold = o.style !== 'dark';
-  const d = down(id) ? 2 : 0;
+  const d = down(id) ? 1 : 0;
   const on = hot(id) || down(id);
-  if (gold && o.pulse != null) {
-    const p = 0.5 + 0.5 * Math.sin(o.pulse * 2.6);
-    const a = ctx.globalAlpha;
-    ctx.globalAlpha = a * (0.1 + 0.18 * p);
-    rrect(x - 5, y - 5, w + 10, h + 12, 9, PAL.yellow);
-    ctx.globalAlpha = a;
-  }
   const face = gold ? (on ? PAL.yellowHi : PAL.yellow) : on ? PAL.panelHi : '#0d1f16';
   const lip = gold ? PAL.yellowLo : '#06120c';
-  const edge = gold ? '#fff8c8' : on ? PAL.yellow : PAL.cream;
-  // Outline and the lip it stands on.
-  rrect(x - 1, y - 1, w + 2, h + 5, 6, PAL.ink);
-  rrect(x, y + 3, w, h, 5, lip);
+  rrect(x - 1, y - 1, w + 2, h + 4, 6, gold ? PAL.ink : on ? PAL.yellow : '#4f7a5c');
+  rrect(x, y + 2, w, h, 5, lip);
   rrect(x, y + d, w, h, 5, face);
-  // An inner frame with notched corners, like the boards.
   const fy = y + d;
-  rect(x + 5, fy + 2, w - 10, 1, edge);
-  rect(x + 5, fy + h - 3, w - 10, 1, gold ? PAL.yellowLo : '#2f5a40');
-  rect(x + 2, fy + 5, 1, h - 10, gold ? PAL.yellowHi : '#2f5a40');
-  rect(x + w - 3, fy + 5, 1, h - 10, gold ? PAL.yellowLo : '#2f5a40');
-  for (const [cx, cy] of [[x + 3, fy + 3], [x + w - 4, fy + 3], [x + 3, fy + h - 4], [x + w - 4, fy + h - 4]]) rect(cx, cy, 1, 1, edge);
+  rect(x + 6, fy + 1, w - 12, 1, gold ? '#fff8c8' : '#2f5a40');
   // Icon slot and divider.
   const slot = Math.round(Math.min(48, w * 0.24));
   if (o.art) o.art(x + 4, fy + 3, slot - 4, h - 6, o.t || 0);
@@ -96,9 +84,7 @@ export function card(id, title, sub, x, y, w, h, fn, o = {}) {
   const subOk = sub && h >= 32;
   const block = th + (subOk ? 9 : 0);
   const ty = fy + Math.round((h - block) / 2);
-  const shade = gold ? PAL.yellowLo : PAL.ink;
-  text(title, tx, ty, ink, { scale: ts, sp: tsp, shadow: shade });
-  if (ts === 2) text(title, tx + 1, ty, ink, { scale: ts, sp: tsp, shadow: shade });
+  text(title, tx, ty, ink, { scale: ts, sp: tsp, shadow: gold ? null : PAL.ink });
   if (subOk) {
     const [a, b] = sub.split('•').map((s) => s.trim());
     const sc = gold ? '#3b4a22' : '#a9bda8';
@@ -115,7 +101,7 @@ export function card(id, title, sub, x, y, w, h, fn, o = {}) {
   const ax = x + w - 11 + nudge + (on ? 1 : 0);
   const ay = fy + Math.round(h / 2) - 4;
   for (let i = 0; i < 4; i++) rect(ax + i, ay + i, 1, 9 - i * 2, ink);
-  region(id, x - 2, y - 2, w + 4, h + 6, fn);
+  region(id, x - 2, y - 2, w + 4, h + 5, fn);
 }
 
 // Card art: a little court with the ball bouncing over it, and sparkles.
@@ -141,9 +127,6 @@ function court(x, y, w, h, t) {
   rect(cx - 2, by - 4 + squash, 5, 1, '#d8f04a');
   rect(cx - 2, by + 3, 5, 1, '#d8f04a');
   rect(cx - 1, by - 2 + squash, 1, 4 - squash, '#f4ffb0');
-  const tw = Math.floor(t * 2) % 2;
-  sparkle(x + 3, y + 4, 1 + tw, PAL.ink);
-  sparkle(x + w - 3, y + 4, 2 - tw, PAL.ink);
 }
 
 // Card art: two rackets crossed, one blue-strung, one red, and a sparkle.
@@ -164,8 +147,6 @@ function rackets(x, y, w, h, t) {
   };
   one(cx - 6, -1, '#2d4f9a');
   one(cx + 6, 1, '#a8323a');
-  const tw = Math.floor(t * 2) % 2;
-  sparkle(cx, y + 2, 1 + tw, PAL.yellow);
 }
 
 // Card art: the cup, catching the light now and then.

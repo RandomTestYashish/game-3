@@ -36,6 +36,7 @@ const M = {
   role: null,
   state: null, // the last state read from the server
   inviteUrl: '',
+  invite: null, // the invite image for this link: { key, canvas, file }
   token: '', // the host's invite token (only to share it; the server keeps a hash)
   name: '',
   nameFor: 'host', // which flow the name screen is for: 'host' | 'join'
@@ -64,6 +65,7 @@ const M = {
   offline: false, // our last request failed
   seen: {}, // analytics fired once per match: { 'match_ready': true, ... }
   rematchAsked: false,
+  boardFrom: null, // where the friends board was opened from ('scores' = the Rally leaderboard)
   shown: { clock: '', wait: '' }, // the clock lines last drawn (read by the tests)
 };
 
@@ -131,6 +133,24 @@ function recalled() {
   }
 }
 
+// Realtime says a row changed. Every status read also marks its player as
+// still here (a write), so reading again on each change would set the two
+// devices bouncing reads off each other. Read again only when it matters:
+// any change to the match, or a player change the game would show.
+function worthReading(change) {
+  const row = change && change.new;
+  if (!row || change.table !== 'multiplayer_players') return true;
+  const a = me();
+  if (a && row.id === a.id) return false; // our own row: our own calls already bring it back
+  const o = opp();
+  if (!o) return true; // someone new: the friend has joined
+  return (
+    Number(row.score) !== o.score || row.court !== o.court || row.lives !== o.lives ||
+    !!row.finished_at !== !!o.finished || !!row.ready_at !== !!o.ready || row.connection_status !== o.connection ||
+    !!row.rematch_requested_at !== !!o.rematch || !!row.rematch_declined_at !== !!o.declined
+  );
+}
+
 function setMatch(id, role) {
   if (M.matchId !== id) {
     if (M.unwatch) M.unwatch();
@@ -146,7 +166,7 @@ function setMatch(id, role) {
   }
   M.matchId = id;
   M.role = role;
-  if (id && !M.unwatch) M.unwatch = watch(id, () => (M.pollAt = 0));
+  if (id && !M.unwatch) M.unwatch = watch(id, (change) => worthReading(change) && (M.pollAt = 0));
   remember();
 }
 
@@ -161,6 +181,15 @@ function note(msg) {
 }
 
 // ---------------------------------------------------------------- entry
+
+// The Rally's leaderboard: its FRIENDS tab opens this board (when
+// multiplayer is on); BACK returns to the leaderboard.
+export const friendsOn = () => mpEnabled();
+export function openFriendsBoard(from) {
+  M.boardFrom = from;
+  if (mpEnabled()) connect().then(loadBoard);
+  A.go('mpboard');
+}
 
 export function openMultiplayer() {
   M.t.opened = Date.now();
@@ -686,31 +715,57 @@ function inviteMessage() {
   return `${(me() && me().name) || M.name} challenged you to The Court! Tap to play (link works for 1 hour): ${M.inviteUrl}`;
 }
 
-async function shareInvite(kind) {
+// The invite image ("<HOST> HAS CHALLENGED YOU!"), made once per invite link
+// and kept ready as a file, so sharing happens inside the tap (browsers only
+// allow the share sheet and new windows straight from a tap).
+function inviteCard() {
+  const host = (me() && me().name) || M.name;
+  const key = M.inviteUrl + '|' + host;
+  if (!M.invite || M.invite.key !== key) {
+    const canvas = drawInviteCard({ host, theme: A.courtTheme(), url: M.inviteUrl });
+    const bin = atob(canvas.toDataURL('image/png').split(',')[1]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    M.invite = { key, canvas, file: new File([bytes], 'the-court-challenge.png', { type: 'image/png' }) };
+  }
+  return M.invite;
+}
+
+// WhatsApp and Share both send the image with the message and link. On a
+// phone that is the share sheet (pick WhatsApp there). Where a browser cannot
+// share files (most laptops), WhatsApp opens with the message and the image
+// is saved to attach; Share copies the link and saves the image.
+function shareInvite(kind) {
   track('multiplayer_invite_shared', { channel: kind });
+  if (kind === 'copy') return copy(M.inviteUrl, 'LINK COPIED');
+  let file = null;
+  try {
+    file = inviteCard().file;
+  } catch {
+    /* no image: the text and link still go */
+  }
+  const withFile = file && navigator.canShare && navigator.canShare({ files: [file] });
+  if (withFile) {
+    return navigator.share({ files: [file], title: 'The Court', text: inviteMessage() }).catch((e) => {
+      if (e && e.name === 'AbortError') note('SHARE CANCELLED');
+      else copy(M.inviteUrl, 'LINK COPIED');
+    });
+  }
   if (kind === 'whatsapp') {
     window.open('https://wa.me/?text=' + encodeURIComponent(inviteMessage()), '_blank', 'noopener');
+    if (file) {
+      download(file);
+      note('IMAGE SAVED: ATTACH IT IN WHATSAPP');
+    }
     return;
   }
-  if (kind === 'copy') return copy(M.inviteUrl, 'LINK COPIED');
-  // Native share with the card, where the device can.
-  try {
-    const card = drawInviteCard({ host: (me() && me().name) || M.name, theme: A.courtTheme(), url: M.inviteUrl });
-    const file = new File([await toBlob(card)], 'the-court-invite.png', { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'The Court', text: inviteMessage() });
-      return;
-    }
-    if (navigator.share) {
-      await navigator.share({ title: 'The Court', text: inviteMessage(), url: M.inviteUrl });
-      return;
-    }
-    download(file);
-    copy(M.inviteUrl, 'CARD SAVED, LINK COPIED');
-  } catch (e) {
-    if (e && e.name === 'AbortError') return note('SHARE CANCELLED');
-    copy(M.inviteUrl, 'LINK COPIED');
+  if (navigator.share) {
+    return navigator.share({ title: 'The Court', text: inviteMessage(), url: M.inviteUrl }).catch((e) => {
+      if (e && e.name === 'AbortError') note('SHARE CANCELLED');
+    });
   }
+  if (file) download(file);
+  copy(M.inviteUrl, file ? 'IMAGE SAVED, LINK COPIED' : 'LINK COPIED');
 }
 
 async function copy(str, msg) {
@@ -813,6 +868,12 @@ function box(k, h, style, draw) {
   const y = Math.max(6, Math.round((H - h) / 2));
   panel(k, x, y, w, h, style, () => draw(x, y, w));
   return { x, y, w };
+}
+
+function boardBack() {
+  const to = M.boardFrom || (M.matchId && match() && match().status === 'completed' ? 'mpresult' : 'mp');
+  M.boardFrom = null;
+  A.go(to);
 }
 
 // The two players' colours: your racket is strung blue, your friend's red.
@@ -928,27 +989,40 @@ export const MP_SCREENS = {
   mpinvite(k) {
     const s = S();
     const m = match();
-    const h = 214;
+    const h = 244;
     box(k, h, 'dark', (x, y, w) => {
-      serif('INVITE A FRIEND', W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 1 });
+      serif('INVITE A FRIEND', W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 1, shadow: PAL.ink });
       rect(W / 2 - 12, y + 32, 24, 1, PAL.cream);
-      text('SEND THEM YOUR MATCH LINK:', W / 2, y + 40, PAL.dim, { align: 'center' });
+      // The challenge image, as it will be sent, beside the ways to send it.
+      const pw = 72;
+      const ph = 90;
+      rrect(x + 9, y + 39, pw + 2, ph + 2, 3, PAL.cream);
+      try {
+        const smooth = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true; // a small, readable preview of the big image
+        ctx.drawImage(inviteCard().canvas, x + 10, y + 40, pw, ph);
+        ctx.imageSmoothingEnabled = smooth;
+      } catch {
+        rect(x + 10, y + 40, pw, ph, '#0d1f16');
+      }
+      const rx = x + pw + 18;
+      const rw = x + w - 10 - rx;
+      text('YOUR CHALLENGE', rx + rw / 2, y + 41, PAL.yellow, { align: 'center', sp: 1 });
+      text('IMAGE + LINK', rx + rw / 2, y + 51, PAL.dim, { align: 'center' });
+      pill('mpshare', 'SHARE', rx + rw / 2, y + 63, rw, 18, () => shareInvite('native'), { sp: 2 });
+      ghost('mpwhatsapp', 'WHATSAPP', rx + rw / 2, y + 89, rw, 15, () => shareInvite('whatsapp'), { sp: 1 });
+      ghost('mpcopy', 'COPY LINK', rx + rw / 2, y + 110, rw, 15, () => shareInvite('copy'), { sp: 1 });
       const url = M.inviteUrl.replace(/^https?:\/\//, '').toUpperCase();
-      const short = url.length > 30 ? url.slice(0, 27) + '...' : url;
-      rrect(x + 10, y + 51, w - 20, 13, 4, '#0d1f16');
-      text(short, W / 2, y + 54, PAL.cream, { align: 'center' });
-      const bw = Math.floor((w - 28) / 3);
-      ghost('mpwhatsapp', 'WHATSAPP', x + 10 + bw / 2, y + 72, bw, 15, () => shareInvite('whatsapp'), { sp: 0 });
-      ghost('mpshare', 'SHARE', W / 2, y + 72, bw, 15, () => shareInvite('native'), { sp: 0 });
-      ghost('mpcopy', 'COPY', x + w - 10 - bw / 2, y + 72, bw, 15, () => shareInvite('copy'), { sp: 0 });
+      const short = url.length > 34 ? url.slice(0, 31) + '...' : url;
+      text(short, W / 2, y + 136, PAL.dim, { align: 'center' });
       const left = m ? m.expires_at - serverNow() : 0;
       const dots = '.'.repeat(1 + (Math.floor(s.time * 2) % 3));
-      text('WAITING FOR YOUR FRIEND' + dots, W / 2, y + 100, PAL.yellow, { align: 'center' });
-      text('INVITE ENDS IN ' + mmss(left), W / 2, y + 111, PAL.dim, { align: 'center' });
-      pill('mprally', 'PLAY THE RALLY WHILE YOU WAIT', W / 2, y + 128, w - 24, 18, () => A.playSolo(), { sp: 1 });
-      text("WE'LL PAUSE IT WHEN THEY JOIN", W / 2, y + 152, PAL.dim, { align: 'center' });
-      ghost('mpcancel', 'CANCEL MATCH', W / 2, y + 168, 120, 15, () => leave('mp'));
-      ghost('back', 'BACK', W / 2, y + 189, 120, 15, () => A.go('mp'));
+      text('WAITING FOR YOUR FRIEND' + dots, W / 2, y + 150, PAL.yellow, { align: 'center' });
+      text('INVITE ENDS IN ' + mmss(left), W / 2, y + 161, PAL.dim, { align: 'center' });
+      pill('mprally', 'PLAY THE RALLY WHILE YOU WAIT', W / 2, y + 176, w - 24, 18, () => A.playSolo(), { sp: 1 });
+      text("WE'LL PAUSE IT WHEN THEY JOIN", W / 2, y + 199, PAL.dim, { align: 'center' });
+      ghost('mpcancel', 'CANCEL MATCH', W / 2 - 52, y + 216, 98, 15, () => leave('mp'), { sp: 0 });
+      ghost('back', 'BACK', W / 2 + 52, y + 216, 98, 15, () => A.go('mp'), { icon: 'back' });
       drawNote(y + h + 6);
     });
     s.primary = () => shareInvite('native');
@@ -1154,9 +1228,9 @@ export const MP_SCREENS = {
         text(String(r.draws), cols[4], ry, c, { align: 'right' });
         text(String(r.matches), cols[5], ry, c, { align: 'right' });
       });
-      ghost('back', 'BACK', W / 2, y + h - 24, 104, 15, () => A.go(M.matchId && match() && match().status === 'completed' ? 'mpresult' : 'mp'));
+      ghost('back', 'BACK', W / 2, y + h - 24, 104, 15, boardBack, { icon: 'back' });
     });
-    s.back = () => A.go(M.matchId && match() && match().status === 'completed' ? 'mpresult' : 'mp');
+    s.back = boardBack;
   },
 
   mphistory(k) {
@@ -1228,3 +1302,4 @@ export function leaveMatch() {
 
 export const MP_SCREEN_NAMES = Object.keys(MP_SCREENS);
 export const mp = M; // for the tests
+export const _worthReading = worthReading; // for the tests

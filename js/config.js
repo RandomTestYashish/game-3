@@ -21,6 +21,11 @@ const DEFAULTS = {
   supabaseAnonKey: 'sb_publishable_t0UuwoJdFcxPtje7yq7dAg_PRlT6tSP',
   table: 'thecourt',
   multiplayer: true, // on: game-3 plays against the dev project
+  // Multiplayer's own Supabase project, if it is not the one above (so the
+  // Rally's leaderboard and multiplayer can live in separate databases).
+  // Empty: multiplayer uses the project above.
+  mpSupabaseUrl: '',
+  mpSupabaseAnonKey: '',
   // PostHog analytics (js/analytics.js). Leave the key empty for no analytics.
   // Use the *project* API key ("phc_..."), from PostHog -> Settings -> Project.
   // It is public by design. NEVER put a personal API key ("phx_...") here.
