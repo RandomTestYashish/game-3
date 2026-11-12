@@ -1,7 +1,7 @@
 // Immediate-mode widgets. Screens call these every frame; each widget paints
 // itself and registers a hit region that the pointer handlers consult.
 
-import { W, H, ctx, PAL, makeLayer, setTarget, rect, rrect, disc, ring, text, textW, icon, clamp, mulberry } from './gfx.js';
+import { W, H, ctx, PAL, makeLayer, setTarget, rect, rrect, disc, ring, text, textW, icon, sparkle, clamp, mulberry } from './gfx.js';
 
 export const ui = {
   regions: [],
@@ -50,6 +50,161 @@ export function pill(id, label, cx, y, w, h, fn, o = {}) {
   text(label, cx, y + d + Math.round((h - 7 * sc) / 2), PAL.ink, { align: 'center', scale: sc, sp: o.sp ?? 2 });
   region(id, x - 2, y - 2, w + 4, h + 6, fn);
 }
+
+// A big menu card (the landing screen): an icon on the left, a divider, a
+// chunky title over a one-line subtitle, and an arrow. style 'gold' (the main
+// way in) or 'dark'. o.art(x, y, w, h, t) draws the icon in its slot.
+// The subtitle may hold one '•', drawn as a dot. Pressed, it sinks 2 pixels.
+export function card(id, title, sub, x, y, w, h, fn, o = {}) {
+  const gold = o.style !== 'dark';
+  const d = down(id) ? 2 : 0;
+  const on = hot(id) || down(id);
+  if (gold && o.pulse != null) {
+    const p = 0.5 + 0.5 * Math.sin(o.pulse * 2.6);
+    const a = ctx.globalAlpha;
+    ctx.globalAlpha = a * (0.1 + 0.18 * p);
+    rrect(x - 5, y - 5, w + 10, h + 12, 9, PAL.yellow);
+    ctx.globalAlpha = a;
+  }
+  const face = gold ? (on ? PAL.yellowHi : PAL.yellow) : on ? PAL.panelHi : '#0d1f16';
+  const lip = gold ? PAL.yellowLo : '#06120c';
+  const edge = gold ? '#fff8c8' : on ? PAL.yellow : PAL.cream;
+  // Outline and the lip it stands on.
+  rrect(x - 1, y - 1, w + 2, h + 5, 6, PAL.ink);
+  rrect(x, y + 3, w, h, 5, lip);
+  rrect(x, y + d, w, h, 5, face);
+  // An inner frame with notched corners, like the boards.
+  const fy = y + d;
+  rect(x + 5, fy + 2, w - 10, 1, edge);
+  rect(x + 5, fy + h - 3, w - 10, 1, gold ? PAL.yellowLo : '#2f5a40');
+  rect(x + 2, fy + 5, 1, h - 10, gold ? PAL.yellowHi : '#2f5a40');
+  rect(x + w - 3, fy + 5, 1, h - 10, gold ? PAL.yellowLo : '#2f5a40');
+  for (const [cx, cy] of [[x + 3, fy + 3], [x + w - 4, fy + 3], [x + 3, fy + h - 4], [x + w - 4, fy + h - 4]]) rect(cx, cy, 1, 1, edge);
+  // Icon slot and divider.
+  const slot = Math.round(Math.min(48, w * 0.24));
+  if (o.art) o.art(x + 4, fy + 3, slot - 4, h - 6, o.t || 0);
+  rect(x + slot + 3, fy + 6, 1, h - 12, gold ? PAL.ink : PAL.creamLo);
+  // Title (as big as fits) and subtitle.
+  const tx = x + slot + 10;
+  const room = w - slot - 10 - 16;
+  const ink = gold ? PAL.ink : PAL.cream;
+  // Big, chunky title (drawn twice, a pixel apart) when it fits; the
+  // subtitle only on cards tall enough for both.
+  const ts = textW(title, 2, 0) + 1 <= room ? 2 : 1;
+  const tsp = textW(title, ts, 1) + 1 <= room ? 1 : 0;
+  const th = 7 * ts;
+  const subOk = sub && h >= 32;
+  const block = th + (subOk ? 9 : 0);
+  const ty = fy + Math.round((h - block) / 2);
+  const shade = gold ? PAL.yellowLo : PAL.ink;
+  text(title, tx, ty, ink, { scale: ts, sp: tsp, shadow: shade });
+  if (ts === 2) text(title, tx + 1, ty, ink, { scale: ts, sp: tsp, shadow: shade });
+  if (subOk) {
+    const [a, b] = sub.split('•').map((s) => s.trim());
+    const sc = gold ? '#3b4a22' : '#a9bda8';
+    const sp = textW(sub.replace('•', '  '), 1, 1) <= room ? 1 : 0;
+    let sx = tx;
+    sx += text(a, sx, ty + th + 2, sc, { sp });
+    if (b != null) {
+      rect(sx + 3, ty + th + 5, 2, 2, sc);
+      text(b, sx + 8, ty + th + 2, sc, { sp });
+    }
+  }
+  // The arrow, nudging forward now and then.
+  const nudge = (o.t || 0) % 2.4 < 0.3 ? 1 : 0;
+  const ax = x + w - 11 + nudge + (on ? 1 : 0);
+  const ay = fy + Math.round(h / 2) - 4;
+  for (let i = 0; i < 4; i++) rect(ax + i, ay + i, 1, 9 - i * 2, ink);
+  region(id, x - 2, y - 2, w + 4, h + 6, fn);
+}
+
+// Card art: a little court with the ball bouncing over it, and sparkles.
+function court(x, y, w, h, t) {
+  const cx = x + Math.round(w / 2);
+  const cy = y + h - 7;
+  const cw = Math.min(w - 4, 30);
+  // The court in perspective: a trapezoid of green rows, white lines.
+  for (let r = 0; r < 7; r++) {
+    const half = Math.round(cw / 2 - (6 - r) * 1.2);
+    rect(cx - half - 1, cy - 3 + r, half * 2 + 2, 1, PAL.ink);
+    rect(cx - half, cy - 3 + r, half * 2, 1, r % 2 ? '#3f9a4f' : '#4fae5c');
+  }
+  rect(cx - Math.round(cw / 2) - 1, cy + 4, cw + 2, 1, PAL.ink);
+  rect(cx, cy - 3, 1, 7, '#f4f1de');
+  rect(cx - Math.round(cw / 2) + 4, cy, cw - 8, 1, '#f4f1de');
+  // The ball: up and down, squashing a little at the bottom.
+  const hop = Math.abs(Math.sin(t * 3.2));
+  const by = cy - 6 - Math.round(hop * Math.max(2, h - 18));
+  const squash = hop < 0.12 ? 1 : 0;
+  disc(cx, by, 4, PAL.ink);
+  rect(cx - 3, by - 3 + squash, 7, 6 - squash, '#d8f04a');
+  rect(cx - 2, by - 4 + squash, 5, 1, '#d8f04a');
+  rect(cx - 2, by + 3, 5, 1, '#d8f04a');
+  rect(cx - 1, by - 2 + squash, 1, 4 - squash, '#f4ffb0');
+  const tw = Math.floor(t * 2) % 2;
+  sparkle(x + 3, y + 4, 1 + tw, PAL.ink);
+  sparkle(x + w - 3, y + 4, 2 - tw, PAL.ink);
+}
+
+// Card art: two rackets crossed, one blue-strung, one red, and a sparkle.
+function rackets(x, y, w, h, t) {
+  const cx = x + Math.round(w / 2);
+  const cy = y + Math.round(h / 2) - 2;
+  const one = (hx, dir, strings) => {
+    // Handle first (it runs under the other racket's head), then the head.
+    for (let i = 0; i < 9; i++) rect(hx - dir * (3 + i), cy + 4 + i, 2, 2, i > 5 ? '#8a5a2b' : '#c98a4e');
+    disc(hx, cy, 6, PAL.ink);
+    disc(hx, cy, 5, PAL.cream);
+    disc(hx, cy, 4, strings);
+    ctx.fillStyle = '#f4f1de';
+    for (let d = -3; d <= 3; d += 2) {
+      ctx.fillRect(hx + d, cy - 3, 1, 7);
+      ctx.fillRect(hx - 3, cy + d, 7, 1);
+    }
+  };
+  one(cx - 6, -1, '#2d4f9a');
+  one(cx + 6, 1, '#a8323a');
+  const tw = Math.floor(t * 2) % 2;
+  sparkle(cx, y + 2, 1 + tw, PAL.yellow);
+}
+
+// Card art: the cup, catching the light now and then.
+function cupArt(x, y, w, h, t) {
+  const cx = x + Math.round(w / 2);
+  icon('trophy', cx - 11, y + Math.round(h / 2) - 11, '#5a3410', 2);
+  icon('trophy', cx - 12, y + Math.round(h / 2) - 12, '#f2b632', 2);
+  if (t % 3 < 0.4) sparkle(cx + 8, y + Math.round(h / 2) - 9, 1, '#fff3c4');
+}
+
+// Card art: a scorecard with a pencil of a line moving down it.
+function listArt(x, y, w, h, t) {
+  const cx = x + Math.round(w / 2);
+  const cy = y + Math.round(h / 2);
+  rrect(cx - 10, cy - 11, 20, 23, 3, PAL.ink);
+  rrect(cx - 9, cy - 10, 18, 21, 2, PAL.cream);
+  for (let i = 0; i < 4; i++) {
+    rect(cx - 6, cy - 6 + i * 5, 3, 2, i === Math.floor(t * 1.5) % 4 ? '#3f9a4f' : '#9fb7a2');
+    rect(cx - 2, cy - 6 + i * 5, 8, 2, '#9fb7a2');
+  }
+}
+
+// Card art: an envelope (the invite), bobbing, with a sparkle.
+function inviteArt(x, y, w, h, t) {
+  const cx = x + Math.round(w / 2);
+  const cy = y + Math.round(h / 2) + (Math.floor(t * 2) % 2);
+  rrect(cx - 12, cy - 8, 24, 17, 2, PAL.ink);
+  rect(cx - 11, cy - 7, 22, 15, '#f4f1de');
+  rect(cx - 11, cy + 6, 22, 1, '#cbbd92');
+  // The flap: a V from the top corners to the middle.
+  for (let i = 0; i < 11; i++) {
+    rect(cx - 11 + i, cy - 7 + Math.floor(i * 0.7), 1, 1, PAL.ink);
+    rect(cx + 10 - i, cy - 7 + Math.floor(i * 0.7), 1, 1, PAL.ink);
+  }
+  rect(cx - 2, cy - 1, 4, 3, '#c8352e'); // the seal
+  sparkle(x + 4, y + 4, 1 + (Math.floor(t * 2) % 2), PAL.ink);
+}
+
+export const cardArt = { court, rackets, cup: cupArt, list: listArt, invite: inviteArt };
 
 // Quiet secondary button.
 export function ghost(id, label, cx, y, w, h, fn, o = {}) {

@@ -16,7 +16,9 @@ create index if not exists thecourt_score_desc on public.thecourt (score desc);
 alter table public.thecourt enable row level security;
 drop policy if exists "anyone can read the board" on public.thecourt;
 create policy "anyone can read the board" on public.thecourt for select to anon, authenticated using (true);
-revoke insert, update, delete, truncate on public.thecourt from anon, authenticated;
+-- Read only: every other right (including the REFERENCES and TRIGGER that
+-- Supabase grants new tables by default) is taken away, then SELECT given back.
+revoke all on public.thecourt from anon, authenticated;
 grant select on public.thecourt to anon, authenticated;
 
 create or replace function public.submit_score(p_name text, p_score bigint, p_court bigint)

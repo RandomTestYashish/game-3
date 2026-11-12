@@ -260,3 +260,14 @@ python tests/e2e.py
 Runs the game in headless Chrome (it uses your installed Google Chrome) at desktop, tablet and phone sizes. It clicks through every screen, checks mouse, keyboard and touch control, the rules and each tool, sound settings, name entry and the leaderboard, and saving across a reload. It plays five courts through in the browser (1, 3, 40, 80 and 120) and simulates all 120 to confirm each can be cleared. Pass a folder path as an argument to keep screenshots.
 
 Adding `?debug` to the URL exposes the game state as `window.__court`, which is what the test drives.
+
+The multiplayer database functions have their own test, run against a throwaway in-memory Postgres (PGlite), never a real project:
+
+```sh
+npm install --prefix /some/scratch/dir @electric-sql/pglite@0.3
+PGLITE=/some/scratch/dir node tests/mp_server_test.mjs
+```
+
+It plays honest and dishonest clients against `mp_checkpoint` (fake, negative, extreme and repeated scores, bricks that come back, a bonus claimed twice, courts skipped or cleared too fast) and checks who may read or change what. Multiplayer scores are checked brick by brick against each court's real layout, and paced against how soon a run could possibly have cleared each court (timed in the game engine by a bot with nine balls and Smash on all the time, far beyond any player). Both live in `supabase/multiplayer/003_courts.sql`; after changing `js/levels.js` or `js/game.js`, run `node scripts/mp_courts.mjs` to regenerate it (the test fails if they disagree). The test also replays real play from the engine (normal play, long Multiball and Smash combos, late courts, checkpoints every half second) and checks the server accepts every checkpoint.
+
+A match lasts at most 30 minutes of play, and once one player is done the other has 3 minutes to finish (`mp_match_secs()` and `mp_grace_secs()` in `002_multiplayer.sql`); then that game ends at its last verified score, so nobody can hold a match open. The game shows the clock in the last 5 minutes and through the grace.

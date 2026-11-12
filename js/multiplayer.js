@@ -11,8 +11,8 @@
 //   order, own pace) -> when both are out (or a player is gone for 30 s) the
 //   server declares the result -> rematch / share / friends board / history.
 
-import { W, H, ctx, PAL, rect, rrect, text, textW, serif, wrap, icon, sparkle, clamp } from './gfx.js';
-import { ui, region, pill, ghost, panel, iconBtn } from './ui.js';
+import { W, H, ctx, PAL, rect, rrect, disc, text, textW, serif, wrap, icon, sparkle, clamp } from './gfx.js';
+import { ui, region, pill, ghost, card, cardArt, panel, iconBtn } from './ui.js';
 import { mpEnabled, connect, call, watch, serverNow } from './mpnet.js';
 import { drawInviteCard, drawResultStory, toBlob } from './mpcards.js';
 import { hudRows } from './render.js';
@@ -21,8 +21,14 @@ const KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ-';
 const DIGITS = '1234567890';
 const POLL_MS = 2000; // a state read (and heartbeat) this often while a match is open
 const CHECKPOINT_MS = 2000; // the most often a running game reports its score
+// After a checkpoint fails (refused, or the network), wait before trying again,
+// doubling up to the most. Nothing is lost meanwhile: every checkpoint carries
+// the whole state (score, court, lives, broken bricks), so the next one catches up.
+const RETRY_MS = 1500;
+const RETRY_MAX_MS = 6000;
 const STORE = 'the-court.mp'; // which match this device is in (the match id only; the server holds the state)
 const TERMINAL = new Set(['completed', 'cancelled', 'expired']);
+const CLOCK_SHOW_MS = 5 * 60 * 1000; // the match clock shows in play once this little is left
 
 let A = null; // what main.js lends us: S, go, audio, track...
 const M = {
@@ -43,6 +49,9 @@ const M = {
   sent: null, // the last checkpoint the server accepted: { score, court, lives, broken }
   sending: false,
   lastSentAt: 0,
+  retryAt: 0, // no checkpoint before this time (after a failed one)
+  retryMs: 0, // the current wait; 0 after a checkpoint is accepted
+  ended: null, // { won } once this player's run is over (every checkpoint then says done)
   pollAt: 0,
   polling: false,
   unwatch: null,
@@ -55,6 +64,7 @@ const M = {
   offline: false, // our last request failed
   seen: {}, // analytics fired once per match: { 'match_ready': true, ... }
   rematchAsked: false,
+  shown: { clock: '', wait: '' }, // the clock lines last drawn (read by the tests)
 };
 
 const reasons = {
@@ -91,6 +101,9 @@ const S = () => A.S;
 const me = () => (M.state && M.state.me) || null;
 const opp = () => (M.state && M.state.opponent) || null;
 const match = () => (M.state && M.state.match) || null;
+// Until the match ends at the latest (its full time, or the grace once one player is done), in ms; null if not set.
+const timeLeft = () => (match() && match().ends_at ? match().ends_at - serverNow() : null);
+const inGrace = () => !!(match() && match().ends_at && match().time_ends_at && match().ends_at < match().time_ends_at);
 const device = () => (W >= 400 ? 'desktop' : 'mobile');
 
 function track(event, props = {}) {
@@ -125,6 +138,9 @@ function setMatch(id, role) {
     M.seen = {};
     M.seq = 0;
     M.sent = null;
+    M.retryAt = 0;
+    M.retryMs = 0;
+    M.ended = null;
     M.reconnects = 0;
     M.rematchAsked = false;
   }
@@ -415,6 +431,9 @@ function startGame() {
   M.seq = p.seq || 0;
   M.sent = { score: p.score, court: p.court, lives: p.lives, broken: p.broken || '' };
   M.lastSentAt = Date.now();
+  M.retryAt = 0;
+  M.retryMs = 0;
+  M.ended = null;
   const startAt = match().start_at || serverNow();
   const wait = Math.max(0, (startAt - serverNow()) / 1000);
   if (!M.t.started) M.t.started = Date.now();
@@ -480,7 +499,9 @@ function snapshot(done) {
   const s = S();
   const g = s.game;
   if (!g || !M.game) return null;
-  return { score: g.score, court: s.level + 1, lives: g.lives, broken: g.state === 'won' ? '' : brokenMap(g), done: !!done };
+  // A won court sends every brick broken: the server allows the clear bonus only for that.
+  const over = M.ended && !M.ended.won;
+  return { score: g.score, court: s.level + 1, lives: over ? 0 : g.lives, broken: brokenMap(g), done: !!done || !!M.ended };
 }
 
 async function checkpoint(snap) {
@@ -491,6 +512,8 @@ async function checkpoint(snap) {
   M.sending = false;
   M.lastSentAt = Date.now();
   if (!res.ok) {
+    M.retryMs = M.retryMs ? Math.min(M.retryMs * 2, RETRY_MAX_MS) : RETRY_MS;
+    M.retryAt = M.lastSentAt + M.retryMs;
     if (res.error === 'network' || res.error === 'timeout') return (M.offline = true);
     if (res.error === 'not_started') return;
     // The server refused the numbers: take its verified state back.
@@ -500,18 +523,19 @@ async function checkpoint(snap) {
   }
   M.seq = seq;
   M.sent = snap;
+  M.retryAt = 0;
+  M.retryMs = 0;
   apply(res.data);
 }
 
 // main.js: this player's run ended (out of lives, or the last court cleared).
 export function onRunEnd(won) {
-  const snap = snapshot(won);
-  if (snap) {
-    snap.done = true;
-    if (!won) snap.lives = 0;
-    M.sending = false;
-    checkpoint(snap);
-  }
+  // Remembered, so every checkpoint from now on says so (a retry included).
+  M.ended = { won };
+  const snap = snapshot();
+  // One checkpoint at a time: if one is on its way, the next tick sends this
+  // (two at once would share a sequence number, and the second be ignored).
+  if (snap && !M.sending) checkpoint(snap);
   if (M.t.activeFrom) {
     M.t.activeMs += Date.now() - M.t.activeFrom;
     M.t.activeFrom = 0;
@@ -545,7 +569,11 @@ export function tickMultiplayer() {
           track('multiplayer_reconnect_succeeded', { cause: 'network' });
         }
         apply(res.data);
-        if (M.game && me() && me().finished && S().screen !== 'mpwait' && S().screen !== 'mpresult') A.go('mpwait'); // timed out on the server
+        if (M.game && me() && me().finished && S().screen !== 'mpwait' && S().screen !== 'mpresult') {
+          // Ended on the server: timed out, or the match's time ran out.
+          if (me().finish_reason === 'time_up') note("TIME'S UP");
+          A.go('mpwait');
+        }
       } else if (res.error === 'not_member') {
         endLocal();
       } else if (!M.offline) {
@@ -556,12 +584,13 @@ export function tickMultiplayer() {
     });
   }
   // Checkpoints from a running game: every 2 s if anything changed, at once
-  // when a life is lost or a court changes.
+  // when a life is lost, a court changes or the run has ended (until the
+  // server says this player is finished).
   if (M.game && m && m.status === 'active' && me() && !me().finished) {
     const snap = snapshot(false);
     const sent = M.sent;
-    if (snap && sent && !M.sending) {
-      const urgent = snap.lives !== sent.lives || snap.court !== sent.court;
+    if (snap && sent && !M.sending && now >= M.retryAt) {
+      const urgent = snap.lives !== sent.lives || snap.court !== sent.court || (snap.done && !sent.done);
       const changed = urgent || snap.score !== sent.score || snap.broken !== sent.broken;
       if (urgent || (changed && now - M.lastSentAt >= CHECKPOINT_MS)) checkpoint(snap);
     }
@@ -578,8 +607,11 @@ export function drawOpponentHUD() {
   const conn = o.finished ? 'DONE' : o.connection === 'online' ? '' : o.connection === 'reconnecting' ? 'RECONNECTING' : 'OFFLINE';
   const line1 = 'VS ' + o.name;
   const line2 = 'C' + o.court + ' ' + o.score;
-  const w = Math.max(textW(line1), textW(line2) + 22, conn ? textW(conn) : 0) + 12;
-  const h = conn ? 33 : 25;
+  // The clock: always once the opponent is done (the grace), else in the last minutes.
+  const left = timeLeft();
+  const clock = left != null && (inGrace() || left <= CLOCK_SHOW_MS) ? (inGrace() ? 'FINISH IN ' : 'TIME ') + mmss(left) : '';
+  const w = Math.max(textW(line1), textW(line2) + 22, conn ? textW(conn) : 0, clock ? textW(clock) : 0) + 12;
+  const h = 25 + (conn ? 8 : 0) + (clock ? 8 : 0);
   const x = W - w - 5;
   const y = rows.tag;
   rrect(x - 1, y - 1, w + 2, h + 2, 5, PAL.ink);
@@ -590,6 +622,8 @@ export function drawOpponentHUD() {
   text(line2, x + 6, y + 13, PAL.yellow);
   for (let i = 0; i < 3; i++) rect(x + w - 20 + i * 5, y + 15, 3, 3, i < o.lives ? PAL.yellow : '#3c5a48');
   if (conn) text(conn, x + 6, y + 23, o.connection === 'reconnecting' ? PAL.yellow : PAL.dim);
+  if (clock) text(clock, x + 6, y + (conn ? 31 : 23), left <= 60000 ? '#ff8a6a' : PAL.yellow);
+  M.shown.clock = clock;
   if (M.offline) {
     const msg = 'RECONNECTING...';
     const mw = textW(msg) + 12;
@@ -781,36 +815,95 @@ function box(k, h, style, draw) {
   return { x, y, w };
 }
 
+// The two players' colours: your racket is strung blue, your friend's red.
+const STRINGS = { me: '#2d4f9a', opp: '#a8323a' };
+
+function racketHead(cx, cy, strings) {
+  for (let i = 0; i < 5; i++) rect(cx + 4 + i, cy + 5 + i, 2, 2, i > 2 ? '#8a5a2b' : '#c98a4e');
+  disc(cx, cy, 7, PAL.ink);
+  disc(cx, cy, 6, PAL.cream);
+  disc(cx, cy, 5, strings);
+  ctx.fillStyle = '#f4f1de';
+  for (let d = -4; d <= 4; d += 2) {
+    ctx.fillRect(cx + d, cy - 4, 1, 9);
+    ctx.fillRect(cx - 4, cy + d, 9, 1);
+  }
+}
+
+// A small rounded badge with its label, right-aligned at rx.
+function badge(label, rx, y, fill, ink) {
+  const bw = textW(label) + 10;
+  rrect(rx - bw, y, bw, 11, 4, PAL.ink);
+  rrect(rx - bw + 1, y + 1, bw - 2, 9, 3, fill);
+  text(label, rx - bw + 5, y + 2, ink);
+  return bw;
+}
+
+// A player's tile: racket, who it is, their name, and a status badge.
+function playerTile(x, y, w, p, label, strings, status, good) {
+  rrect(x, y, w, 26, 5, good ? '#3f9a4f' : '#2f5a40');
+  rrect(x + 1, y + 1, w - 2, 24, 4, '#0d1f16');
+  racketHead(x + 13, y + 12, strings);
+  text(label, x + 28, y + 5, PAL.dim);
+  text(p ? p.name : '...', x + 28, y + 14, PAL.cream, { sp: 1 });
+  badge(status, x + w - 6, y + 8, good ? '#5fd35f' : status === 'AWAY' ? '#e0503a' : PAL.yellow, PAL.ink);
+}
+
+// A bar that empties as time runs out (left / total, in ms).
+function timeBar(x, y, w, left, total, label) {
+  const f = clamp(left / total, 0, 1);
+  rrect(x - 1, y - 1, w + 2, 7, 3, PAL.ink);
+  rect(x, y, w, 5, '#0d1f16');
+  rect(x, y, Math.round(w * f), 5, f < 0.2 ? '#ff8a6a' : PAL.yellow);
+  rect(x, y, Math.round(w * f), 1, f < 0.2 ? '#ffc0a8' : PAL.yellowHi);
+  text(label, x + w / 2, y + 9, PAL.dim, { align: 'center' });
+}
+
 export const MP_SCREENS = {
   mp(k) {
     const s = S();
     const on = mpEnabled();
     const open = M.matchId && match() && !TERMINAL.has(match().status);
-    box(k, on ? 200 : 140, 'dark', (x, y, w) => {
-      serif('MULTIPLAYER', W / 2 + 2, y + 14, 16, PAL.cream, { align: 'center', sp: 2 });
-      rect(W / 2 - 12, y + 33, 24, 1, PAL.cream);
+    const cards = on ? (open ? 4 : 3) : 0;
+    const h = on ? 74 + cards * 41 + 26 : 140;
+    box(k, h, 'dark', (x, y, w) => {
+      // Header: the crossed rackets over the title, as on the landing card.
+      cardArt.rackets(W / 2 - 22, y + 4, 44, 26, s.time);
+      serif('MULTIPLAYER', W / 2 + 2, y + 28, 14, PAL.cream, { align: 'center', sp: 2, shadow: PAL.ink });
+      text('CHALLENGE YOUR FRIENDS', W / 2, y + 46, PAL.dim, { align: 'center', sp: 1 });
       if (!on) {
-        wrapped(say('not_configured'), W / 2, y + 48, PAL.dim, w - 24);
-        ghost('back', 'BACK', W / 2, y + 100, 104, 15, () => A.go('title'));
+        wrapped(say('not_configured'), W / 2, y + 62, PAL.dim, w - 24);
+        ghost('back', 'BACK', W / 2, y + h - 24, 104, 15, () => A.go('title'), { icon: 'back' });
         return;
       }
-      text('PLAY A FRIEND FROM THE SAME START.', W / 2, y + 42, PAL.dim, { align: 'center' });
-      text('3 LIVES EACH. HIGHEST SCORE WINS.', W / 2, y + 52, PAL.dim, { align: 'center' });
+      // The rules at a glance.
+      const chips = ['3 LIVES', '30 MIN', 'TOP SCORE WINS'];
+      const cw = chips.map((c) => textW(c) + 10);
+      let cx = Math.round(W / 2 - (cw.reduce((a, b) => a + b, 0) + 8) / 2);
+      chips.forEach((c, i) => {
+        rrect(cx, y + 57, cw[i], 12, 4, '#2f5a40');
+        rrect(cx + 1, y + 58, cw[i] - 2, 10, 3, '#0d1f16');
+        text(c, cx + 5, y + 60, i === 2 ? PAL.yellow : PAL.cream);
+        cx += cw[i] + 4;
+      });
+      const cw2 = w - 20;
+      let cy = y + 76;
+      const next = () => (cy += 41) - 41;
       if (open) {
-        pill('mpreturn', 'BACK TO YOUR MATCH', W / 2, y + 68, 150, 19, () => route(true));
-        ghost('mphost', 'HOST A NEW MATCH', W / 2, y + 98, 150, 15, hostNew);
+        card('mpreturn', 'YOUR MATCH', 'BACK TO IT • IT IS STILL ON', x + 10, next(), cw2, 32, () => route(true), { pulse: s.time, t: s.time, art: cardArt.court });
+        card('mphost', 'NEW MATCH', 'HOST ANOTHER • NEW LINK', x + 10, next(), cw2, 32, hostNew, { style: 'dark', t: s.time, art: cardArt.invite });
       } else {
-        pill('mphost', 'HOST A MATCH', W / 2, y + 68, 150, 19, hostNew);
+        card('mphost', 'NEW MATCH', 'SEND A LINK • VALID 1 HOUR', x + 10, next(), cw2, 32, hostNew, { pulse: s.time, t: s.time, art: cardArt.invite });
       }
-      ghost('mpboard', 'FRIENDS BOARD', W / 2, y + 122, 150, 15, () => {
+      card('mpboard', 'FRIENDS', 'BOARD • WINS, THEN LOSSES', x + 10, next(), cw2, 32, () => {
         loadBoard();
         A.go('mpboard');
-      });
-      ghost('mphistory', 'MATCH HISTORY', W / 2, y + 143, 150, 15, () => {
+      }, { style: 'dark', t: s.time + 0.7, art: cardArt.cup });
+      card('mphistory', 'HISTORY', 'YOUR LAST 20 MATCHES', x + 10, next(), cw2, 32, () => {
         loadHistory();
         A.go('mphistory');
-      });
-      ghost('back', 'BACK', W / 2, y + 170, 150, 15, () => A.go('title'));
+      }, { style: 'dark', t: s.time + 1.4, art: cardArt.list });
+      ghost('back', 'BACK', W / 2, y + h - 23, 104, 15, () => A.go('title'), { icon: 'back' });
     });
     s.primary = open ? () => route(true) : on ? hostNew : null;
     s.back = () => A.go('title');
@@ -902,28 +995,28 @@ export const MP_SCREENS = {
     const m = match();
     const a = me();
     const b = opp();
-    const h = 196;
+    const h = 202;
     box(k, h, 'dark', (x, y, w) => {
-      serif('GET READY', W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 2 });
+      serif('GET READY', W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 2, shadow: PAL.ink });
       rect(W / 2 - 12, y + 32, 24, 1, PAL.cream);
-      const row = (p, ry, label) => {
-        rrect(x + 10, ry, w - 20, 22, 5, '#0d1f16');
-        text(label, x + 16, ry + 4, PAL.dim);
-        text(p ? p.name : '...', x + 16, ry + 12, PAL.cream, { sp: 1 });
-        const st = !p ? 'WAITING' : p.ready ? 'READY' : p.connection !== 'online' ? 'AWAY' : 'NOT READY';
-        text(st, x + w - 16, ry + 8, p && p.ready ? '#5fd35f' : PAL.yellow, { align: 'right', sp: 1 });
-      };
-      row(a, y + 42, 'YOU');
-      row(b, y + 70, 'YOUR FRIEND');
+      const st = (p) => (!p ? 'WAITING' : p.ready ? 'READY' : p.connection !== 'online' ? 'AWAY' : 'NOT READY');
+      playerTile(x + 10, y + 40, w - 20, a, 'YOU', STRINGS.me, st(a), !!(a && a.ready));
+      playerTile(x + 10, y + 78, w - 20, b, 'YOUR FRIEND', STRINGS.opp, st(b), !!(b && b.ready));
+      // VS between the two tiles.
+      rrect(W / 2 - 10, y + 66, 20, 13, 4, PAL.ink);
+      text('VS', W / 2, y + 69, PAL.yellow, { align: 'center' });
       if (m && (m.status === 'starting' || m.status === 'active')) {
-        text('STARTING...', W / 2, y + 108, PAL.yellow, { align: 'center', sp: 2 });
+        text('STARTING...', W / 2, y + 122, PAL.yellow, { align: 'center', sp: 2 });
       } else if (a && !a.ready) {
-        pill('mpreadybtn', "I'M READY", W / 2, y + 104, 130, 21, ready, { pulse: s.time });
+        card('mpreadybtn', "I'M READY", 'BOTH READY • THE MATCH STARTS', x + 10, y + 112, w - 20, 32, ready, { pulse: s.time, t: s.time, art: cardArt.court });
       } else {
-        text('WAITING FOR ' + ((b && b.name) || 'YOUR FRIEND') + '.'.repeat(1 + (Math.floor(s.time * 2) % 3)), W / 2, y + 110, PAL.yellow, { align: 'center' });
+        text('WAITING FOR ' + ((b && b.name) || 'YOUR FRIEND') + '.'.repeat(1 + (Math.floor(s.time * 2) % 3)), W / 2, y + 124, PAL.yellow, { align: 'center' });
       }
-      if (m && m.ready_deadline) text('READY WITHIN ' + mmss(m.ready_deadline - serverNow()), W / 2, y + 136, PAL.dim, { align: 'center' });
-      ghost('mpleave', 'LEAVE MATCH', W / 2, y + 156, 120, 15, () => leave('mp'));
+      if (m && m.ready_deadline) {
+        const left = m.ready_deadline - serverNow();
+        timeBar(x + 20, y + 154, w - 40, left, 5 * 60 * 1000, 'READY WITHIN ' + mmss(left));
+      }
+      ghost('mpleave', 'LEAVE MATCH', W / 2, y + 177, 120, 15, () => leave('mp'), { icon: 'back' });
       drawNote(y + h + 6);
     });
     s.primary = ready;
@@ -944,13 +1037,27 @@ export const MP_SCREENS = {
     const a = me();
     const b = opp();
     box(k, 170, 'dark', (x, y, w) => {
-      serif("YOU'RE DONE", W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 1 });
-      text('YOUR SCORE ' + ((a && (a.final_score ?? a.score)) || 0), W / 2, y + 38, PAL.yellow, { align: 'center', sp: 1 });
+      serif("YOU'RE DONE", W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 1, shadow: PAL.ink });
+      // The scoreboard: you and your friend side by side.
+      const half = Math.floor((w - 26) / 2);
+      const side = (p, sx, label, strings, live) => {
+        rrect(sx, y + 34, half, 52, 5, live ? '#3f9a4f' : '#2f5a40');
+        rrect(sx + 1, y + 35, half - 2, 50, 4, '#0d1f16');
+        racketHead(sx + 12, y + 46, strings);
+        text(label, sx + 24, y + 40, PAL.dim);
+        text(p ? p.name : '...', sx + 24, y + 49, PAL.cream, { sp: 1 });
+        const sc = String(p ? p.final_score ?? p.score : 0);
+        const big = textW(sc, 2, 1) <= half - 10 ? 2 : 1;
+        text(sc, sx + half / 2, y + 60, PAL.yellow, { align: 'center', scale: big, shadow: PAL.ink });
+        if (p && p.court) text('COURT ' + p.court, sx + half / 2, y + 76, PAL.dim, { align: 'center' });
+        if (live && Math.floor(s.time * 2) % 2) rect(sx + half - 7, y + 39, 3, 3, '#5fd35f'); // still playing
+      };
+      side(a, x + 10, 'YOU', STRINGS.me, false);
+      side(b, x + 16 + half, 'FRIEND', STRINGS.opp, !!(b && !b.finished));
+      text('VS', W / 2, y + 56, PAL.yellow, { align: 'center' });
       if (b) {
-        rrect(x + 10, y + 52, w - 20, 34, 5, '#0d1f16');
-        text(b.name + (b.finished ? ' IS DONE' : ' IS PLAYING'), W / 2, y + 57, PAL.cream, { align: 'center', sp: 1 });
-        text('COURT ' + b.court + '   SCORE ' + b.score + '   LIVES ' + b.lives, W / 2, y + 70, PAL.yellow, { align: 'center' });
         if (b.connection === 'reconnecting') text('RECONNECTING... UP TO 30 S', W / 2, y + 94, PAL.yellow, { align: 'center' });
+        else if (!b.finished && timeLeft() != null) text((M.shown.wait = b.name + ' HAS ' + mmss(timeLeft()) + ' TO FINISH'), W / 2, y + 94, PAL.yellow, { align: 'center' });
       }
       text('THE RESULT APPEARS WHEN BOTH ARE DONE' + '.'.repeat(1 + (Math.floor(s.time * 2) % 3)), W / 2, y + 108, PAL.dim, { align: 'center' });
       ghost('home', 'HOME (SEE IT IN HISTORY)', W / 2, y + 132, w - 30, 15, () => {
@@ -1029,12 +1136,18 @@ export const MP_SCREENS = {
         wrapped(say(B.error) , W / 2, y + 64, PAL.cream, w - 24);
         pill('retry', 'TRY AGAIN', W / 2, y + 96, 110, 17, loadBoard);
       } else if (!B.rows.length) wrapped('NO MATCHES YET. HOST ONE AND INVITE A FRIEND!', W / 2, y + 66, PAL.cream, w - 24);
-      const max = Math.floor((h - 90) / 12);
+      const max = Math.floor((h - 92) / 16);
+      const MEDAL = ['#f2b632', '#c9d3d6', '#d08a4e']; // gold, silver, bronze
       B.rows.slice(0, max).forEach((r, i) => {
-        const ry = y + 58 + i * 12;
-        if (r.me) rrect(x + 7, ry - 2, w - 14, 11, 3, '#1d4a31');
+        const ry = y + 61 + i * 16;
+        if (r.me) rrect(x + 7, ry - 3, w - 14, 13, 3, '#1d4a31');
         const c = r.me ? PAL.yellow : PAL.cream;
-        text(String(r.rank), cols[0], ry, c);
+        if (r.rank <= 3) {
+          // A medal for the top three, its number on it.
+          disc(cols[0] + 4, ry + 3, 7, PAL.ink);
+          disc(cols[0] + 4, ry + 3, 6, MEDAL[r.rank - 1]);
+          text(String(r.rank), cols[0] + 5, ry, PAL.ink, { align: 'center' });
+        } else text(String(r.rank), cols[0] + 5, ry, c, { align: 'center' });
         text(r.name, cols[1], ry, c);
         text(String(r.wins), cols[2], ry, c, { align: 'right' });
         text(String(r.losses), cols[3], ry, c, { align: 'right' });
@@ -1063,9 +1176,11 @@ export const MP_SCREENS = {
         rrect(x + 8, ry, w - 16, 20, 4, '#0d1f16');
         const ms = r.me_score ?? r.me_live;
         const os = r.opp_score ?? r.opp_live;
-        text(`${r.me_name} ${ms}  -  ${os} ${r.opp_name}`, x + 13, ry + 3, PAL.cream);
+        text(`${ms}`, x + 13, ry + 3, PAL.yellow);
+        text(`- ${os} ${r.opp_name}`, x + 17 + textW(String(ms)), ry + 3, PAL.cream);
         const out = r.outcome === 'won' ? 'WON' : r.outcome === 'lost' ? 'LOST' : r.outcome === 'draw' ? 'DRAW' : r.status === 'active' || r.status === 'starting' ? 'PLAYING' : r.status.replace(/_/g, ' ').toUpperCase();
-        text(out, x + w - 13, ry + 3, r.outcome === 'won' ? PAL.yellow : r.outcome === 'lost' ? '#ff9c7a' : PAL.dim, { align: 'right' });
+        const tone = r.outcome === 'won' ? ['#5fd35f', PAL.ink] : r.outcome === 'lost' ? ['#e0503a', '#fff3e8'] : ['#4a5a4e', PAL.cream];
+        badge(out, x + w - 12, ry + 4, tone[0], tone[1]);
         const d = new Date(r.at);
         const when = d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).toUpperCase().replace(',', '');
         text(when, x + 13, ry + 12, PAL.dim);

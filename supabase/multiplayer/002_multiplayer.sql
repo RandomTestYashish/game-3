@@ -17,9 +17,11 @@
 --   * Scores are played in each browser (as in solo). The server cannot
 --     replay the physics, so it checks every checkpoint against what the
 --     game allows: lives only go down, courts only go up one at a time and
---     no faster than a court can be played, and the score can only rise by
---     at most 150 points per newly broken brick (50 points x the x3 combo)
---     plus the 300-point life bonus per cleared court.
+--     no faster than a court can be played, bricks never come back, and
+--     the score can only rise by what the newly broken bricks of that court
+--     (its real layout, in multiplayer_courts) are worth at the top x3
+--     combo, plus the clear bonus once per court, with bricks falling no
+--     faster than 40 a second.
 --
 -- Safe to run again (create or replace / if not exists).
 
@@ -62,12 +64,13 @@ create table if not exists public.multiplayer_players (
   broken text not null default '' check (length(broken) <= 64),
   seq int not null default 0,
   court_started_at timestamptz,
+  checkpoint_at timestamptz, -- when the last checkpoint was accepted (paces how fast bricks may fall)
   connection_status text not null default 'online' check (connection_status in ('online', 'reconnecting', 'timeout', 'left')),
   last_seen_at timestamptz not null default now(),
   reconnect_count int not null default 0,
   final_score bigint,
   finished_at timestamptz,
-  finish_reason text check (finish_reason in ('out_of_lives', 'all_courts', 'timeout', 'left')),
+  finish_reason text check (finish_reason in ('out_of_lives', 'all_courts', 'timeout', 'left', 'time_up')),
   rematch_requested_at timestamptz,
   rematch_declined_at timestamptz,
   unique (match_id, user_id),
@@ -114,6 +117,24 @@ create table if not exists public.multiplayer_rate (
   at timestamptz not null default now()
 );
 
+-- Each court's bricks in the game's own order (T, L, H or S per brick), so a
+-- checkpoint is checked brick by brick, and reach: the soonest (seconds after
+-- the match starts) a run could have cleared it, timed by a bot beyond any
+-- player. Filled by 003_courts.sql, which is generated from js/levels.js
+-- (node scripts/mp_courts.mjs).
+create table if not exists public.multiplayer_courts (
+  court int primary key check (court between 1 and 120),
+  bricks text not null check (bricks ~ '^[TLHS]+$' and length(bricks) <= 400), -- the biggest court has 339
+  reach real not null default 0 check (reach >= 0)
+);
+
+-- For tables made before these columns.
+alter table public.multiplayer_players add column if not exists checkpoint_at timestamptz;
+alter table public.multiplayer_players drop constraint if exists multiplayer_players_finish_reason_check;
+alter table public.multiplayer_players add constraint multiplayer_players_finish_reason_check
+  check (finish_reason in ('out_of_lives', 'all_courts', 'timeout', 'left', 'time_up'));
+alter table public.multiplayer_courts add column if not exists reach real not null default 0;
+
 create index if not exists multiplayer_players_user on public.multiplayer_players (user_id);
 create index if not exists multiplayer_players_match on public.multiplayer_players (match_id);
 create index if not exists multiplayer_matches_status on public.multiplayer_matches (status, created_at);
@@ -128,9 +149,10 @@ alter table public.multiplayer_players enable row level security;
 alter table public.multiplayer_invites enable row level security;
 alter table public.multiplayer_match_events enable row level security;
 alter table public.multiplayer_rate enable row level security;
+alter table public.multiplayer_courts enable row level security;
 
 revoke all on public.multiplayer_matches, public.multiplayer_players, public.multiplayer_invites,
-  public.multiplayer_match_events, public.multiplayer_rate from anon, authenticated;
+  public.multiplayer_match_events, public.multiplayer_rate, public.multiplayer_courts from anon, authenticated;
 -- Members may read their own match and its two players (for Realtime); nothing else.
 grant select on public.multiplayer_matches, public.multiplayer_players to authenticated;
 
@@ -143,7 +165,8 @@ set search_path = ''
 as $$
   select exists (select 1 from public.multiplayer_players where match_id = p_match and user_id = auth.uid());
 $$;
-revoke all on function public.mp_is_member(uuid) from public;
+-- Signed-in players only (the read policies call it as them); never the anonymous role.
+revoke all on function public.mp_is_member(uuid) from public, anon;
 grant execute on function public.mp_is_member(uuid) to authenticated;
 
 drop policy if exists "members read their match" on public.multiplayer_matches;
@@ -203,20 +226,39 @@ returns void language sql set search_path = '' as $$
   insert into public.multiplayer_match_events (match_id, player_id, kind, data) values (p_match, p_player, p_kind, p_data);
 $$;
 
--- How many bricks a court's "broken" bitmap marks (base64 of up to 40 bytes).
-create or replace function public.mp_bits(p text)
-returns int language plpgsql immutable set search_path = '' as $$
-declare b bytea;
+-- A court's "broken" bitmap (base64, bit i = brick i, as js/multiplayer.js
+-- writes it), checked against the court's real brick count and returned as
+-- exactly ceil(n / 8) bytes. A bit past the last brick is refused.
+create or replace function public.mp_map(p text, n int)
+returns bytea language plpgsql immutable set search_path = '' as $$
+declare b bytea := ''::bytea; size int := (n + 7) / 8; i int;
 begin
-  if p is null or p = '' then return 0; end if;
-  begin
-    b := decode(p, 'base64');
-  exception when others then
-    perform public.mp_fail('bad_checkpoint');
-  end;
-  if length(b) > 40 then perform public.mp_fail('bad_checkpoint'); end if;
-  return bit_count(b)::int;
+  if p is not null and p <> '' then
+    begin
+      b := decode(p, 'base64');
+    exception when others then
+      perform public.mp_fail('bad_checkpoint');
+    end;
+  end if;
+  if length(b) > size then perform public.mp_fail('bad_checkpoint'); end if;
+  if length(b) < size then b := b || decode(repeat('00', size - length(b)), 'hex'); end if;
+  for i in n .. size * 8 - 1 loop
+    if get_bit(b, i) = 1 then perform public.mp_fail('bad_checkpoint'); end if;
+  end loop;
+  return b;
 end $$;
+
+create or replace function public.mp_full(b bytea, n int)
+returns boolean language sql immutable set search_path = '' as $$
+  select n > 0 and bit_count(b) = n;
+$$;
+
+-- The most one brick can score: its points at the top x3 combo, rounded to
+-- 5 like brickPoints() in js/game.js (T 10, L 15, H 30, S 50 points).
+create or replace function public.mp_brick_max(t text)
+returns int language sql immutable set search_path = '' as $$
+  select case t when 'T' then 30 when 'L' then 45 when 'H' then 90 when 'S' then 150 end;
+$$;
 
 create or replace function public.mp_token_hash(p_token text)
 returns text language sql immutable set search_path = '' as $$
@@ -265,6 +307,38 @@ end $$;
 -- Lazy lifecycle: every read or write of a match moves it on if its time
 -- has come (expiry, ready timeout, countdown over, a player gone too long,
 -- both players finished).
+-- The time limits (seconds): the longest a match can be played, and how
+-- long the other player has to finish once one is done.
+create or replace function public.mp_match_secs()
+returns int language sql immutable set search_path = '' as $$ select 30 * 60 $$;
+create or replace function public.mp_grace_secs()
+returns int language sql immutable set search_path = '' as $$ select 3 * 60 $$;
+
+-- When a match in play ends at the latest: its full time, or sooner once one
+-- player is done (their finish + the grace). Null before it starts.
+create or replace function public.mp_ends_at(p_match uuid)
+returns timestamptz language sql stable set search_path = '' as $$
+  select least(m.started_at + make_interval(secs => public.mp_match_secs()),
+               (select min(p.finished_at) + make_interval(secs => public.mp_grace_secs())
+                  from public.multiplayer_players p where p.match_id = m.id))
+    from public.multiplayer_matches m where m.id = p_match;
+$$;
+
+-- Matches nobody has looked at since their time ran out (both players gone):
+-- settled whenever anyone calls, a few at a time.
+create or replace function public.mp_sweep()
+returns void language plpgsql set search_path = '' as $$
+declare r record;
+begin
+  for r in select id from public.multiplayer_matches
+            where status in ('starting', 'active') and started_at < now() - make_interval(secs => public.mp_match_secs())
+            order by started_at limit 10
+              for update skip locked -- never wait on (or deadlock with) a match someone else is settling
+  loop
+    perform public.mp_refresh(r.id);
+  end loop;
+end $$;
+
 create or replace function public.mp_refresh(p_match uuid)
 returns void language plpgsql set search_path = '' as $$
 declare m public.multiplayer_matches; pl record; left_count int;
@@ -313,6 +387,15 @@ begin
         perform public.mp_event(m.id, pl.id, 'connection_lost');
       end if;
     end loop;
+    -- Time: a match lasts at most mp_match_secs() of play, and once one
+    -- player is done the other has mp_grace_secs() to finish. Then their game
+    -- ends at their last verified score, so nobody can keep a match open.
+    if now() >= public.mp_ends_at(m.id) then
+      for pl in select * from public.multiplayer_players where match_id = m.id and finished_at is null loop
+        perform public.mp_finish_player(pl.id, 'time_up');
+        perform public.mp_event(m.id, pl.id, 'time_up', jsonb_build_object('why', case when now() >= m.started_at + make_interval(secs => public.mp_match_secs()) then 'match' else 'grace' end));
+      end loop;
+    end if;
     select count(*) into left_count from public.multiplayer_players where match_id = m.id and finished_at is null;
     if left_count = 0 then perform public.mp_complete(m.id); end if;
   end if;
@@ -346,7 +429,9 @@ begin
       'winner', case when m.winner_player_id is null then null when m.winner_player_id = me.id then 'me' else 'opponent' end,
       'created_at', floor(extract(epoch from m.created_at) * 1000), 'expires_at', floor(extract(epoch from m.expires_at) * 1000),
       'ready_deadline', floor(extract(epoch from m.ready_deadline) * 1000), 'start_at', floor(extract(epoch from m.start_at) * 1000),
-      'finished_at', floor(extract(epoch from m.finished_at) * 1000), 'rematch_of', m.rematch_of, 'rematch_id', rematch),
+      'finished_at', floor(extract(epoch from m.finished_at) * 1000), 'rematch_of', m.rematch_of, 'rematch_id', rematch,
+      'ends_at', floor(extract(epoch from public.mp_ends_at(m.id)) * 1000),
+      'time_ends_at', floor(extract(epoch from m.started_at + make_interval(secs => public.mp_match_secs())) * 1000)),
     'me', pj, 'opponent', oj);
 end $$;
 
@@ -374,6 +459,7 @@ begin
     insert into public.multiplayer_players (match_id, user_id, role, display_name) values (m.id, u, 'host', n) returning id into pid;
     update public.multiplayer_matches set host_player_id = pid where id = m.id;
     perform public.mp_event(m.id, pid, 'match_created');
+    perform public.mp_sweep();
     -- Retention: matches that never started are removed after 7 days.
     delete from public.multiplayer_matches where status in ('cancelled', 'expired') and created_at < now() - interval '7 days';
   end if;
@@ -459,6 +545,7 @@ begin
     update public.multiplayer_players set last_seen_at = now() where id = me.id;
   end if;
   perform public.mp_refresh(p_match);
+  perform public.mp_sweep();
   return public.mp_state_json(p_match, u);
 end $$;
 
@@ -476,7 +563,7 @@ begin
   if me.ready_at is null then perform public.mp_event(p_match, me.id, 'player_ready'); end if;
   if (select count(*) from public.multiplayer_players where match_id = p_match and ready_at is not null) = 2 then
     update public.multiplayer_matches set status = 'starting', start_at = now() + interval '4 seconds', started_at = now() + interval '4 seconds', updated_at = now() where id = p_match;
-    update public.multiplayer_players set score = 0, court = 1, lives = 3, broken = '', seq = 0, last_seen_at = now() where match_id = p_match;
+    update public.multiplayer_players set score = 0, court = 1, lives = 3, broken = '', seq = 0, checkpoint_at = null, last_seen_at = now() where match_id = p_match;
     perform public.mp_event(p_match, null, 'countdown_started');
   end if;
   return public.mp_state_json(p_match, u);
@@ -486,7 +573,7 @@ end $$;
 create or replace function public.mp_checkpoint(p_match uuid, p_seq int, p_score bigint, p_court int, p_lives int, p_broken text, p_done boolean)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare u uuid := public.mp_uid(); m public.multiplayer_matches; me public.multiplayer_players;
-  old_bits int; new_bits int; most bigint;
+  cur text; nxt text; soonest real; old_b bytea; new_b bytea; most bigint := 0; fell int := 0; secs numeric; i int;
 begin
   perform public.mp_refresh(p_match);
   select * into m from public.multiplayer_matches where id = p_match;
@@ -500,27 +587,72 @@ begin
   if p_seq is null or p_seq <= me.seq then return public.mp_state_json(p_match, u); end if; -- a repeat: ignored, never counted twice
   if p_lives is null or p_lives < 0 or p_lives > me.lives then perform public.mp_fail('bad_lives'); end if;
   if p_court is null or p_court < me.court or p_court > me.court + 1 or p_court > 120 then perform public.mp_fail('bad_court'); end if;
-  if p_score is null or p_score < me.score then perform public.mp_fail('bad_score'); end if;
-  new_bits := public.mp_bits(p_broken);
-  old_bits := public.mp_bits(me.broken);
+  if p_score is null or p_score < me.score or p_score % 5 <> 0 then perform public.mp_fail('bad_score'); end if;
+  -- The score may rise only by what the newly broken bricks can be worth
+  -- (each at its top combo value) plus the clear bonus, once per court.
+  select c.bricks, c.reach into cur, soonest from public.multiplayer_courts c where c.court = me.court;
+  if cur is null then perform public.mp_fail('bad_court'); end if;
+  old_b := public.mp_map(me.broken, length(cur));
   if p_court = me.court then
-    if new_bits < old_bits then perform public.mp_fail('bad_checkpoint'); end if;
-    most := (new_bits - old_bits) * 150;
+    new_b := public.mp_map(p_broken, length(cur));
+    for i in 0 .. length(cur) - 1 loop
+      if get_bit(old_b, i) = 1 and get_bit(new_b, i) = 0 then perform public.mp_fail('bad_checkpoint'); end if; -- a brick came back
+      if get_bit(new_b, i) = 1 and get_bit(old_b, i) = 0 then
+        most := most + public.mp_brick_max(substr(cur, i + 1, 1));
+        fell := fell + 1;
+      end if;
+    end loop;
+    if public.mp_full(new_b, length(cur)) and not public.mp_full(old_b, length(cur)) then most := most + me.lives * 100; end if;
   else
     -- A court cleared: no faster than a court can be played (the countdown alone takes over 2 s).
     if me.court_started_at is not null and now() < me.court_started_at + interval '5 seconds' then perform public.mp_fail('too_fast'); end if;
     if p_lives < 1 then perform public.mp_fail('bad_lives'); end if;
-    most := (320 - old_bits + new_bits) * 150 + 300;
+    if not public.mp_full(old_b, length(cur)) then
+      for i in 0 .. length(cur) - 1 loop
+        if get_bit(old_b, i) = 0 then
+          most := most + public.mp_brick_max(substr(cur, i + 1, 1));
+          fell := fell + 1;
+        end if;
+      end loop;
+      most := most + me.lives * 100;
+    end if;
+    select bricks into nxt from public.multiplayer_courts where court = p_court;
+    if nxt is null then perform public.mp_fail('bad_court'); end if;
+    new_b := public.mp_map(p_broken, length(nxt));
+    for i in 0 .. length(nxt) - 1 loop
+      if get_bit(new_b, i) = 1 then
+        most := most + public.mp_brick_max(substr(nxt, i + 1, 1));
+        fell := fell + 1;
+      end if;
+    end loop;
   end if;
   if p_score - me.score > most then perform public.mp_fail('bad_score'); end if;
+  -- No faster than bricks can fall since the last accepted checkpoint: 150,
+  -- plus 110 a second. Measured in the game itself (scripts/mp_courts.mjs'
+  -- bot), the most ever seen is 97 in a quarter second, 173 in one second and
+  -- 328 in five; this allows about half as much again.
+  secs := greatest(0, extract(epoch from now() - coalesce(me.checkpoint_at, m.started_at, now())));
+  if fell > 150 + 110 * secs then perform public.mp_fail('too_fast'); end if;
+  -- And over the whole match: a court finished (cleared, or left for the next)
+  -- no sooner than 3/4 of the soonest that bot could have got there.
+  if (p_court <> me.court or (public.mp_full(new_b, length(cur)) and not public.mp_full(old_b, length(cur))))
+     and now() < coalesce(m.started_at, now()) + make_interval(secs => 0.75 * soonest) then
+    perform public.mp_fail('too_fast');
+  end if;
+  -- Finishing every court means court 120 really is cleared.
+  if p_done and p_lives > 0 and p_court = 120 and not public.mp_full(new_b, length(coalesce(nxt, cur))) then
+    perform public.mp_fail('bad_checkpoint');
+  end if;
   update public.multiplayer_players
      set seq = p_seq, score = p_score, court = p_court, lives = p_lives, broken = coalesce(p_broken, ''),
-         last_seen_at = now(), connection_status = 'online',
+         last_seen_at = now(), connection_status = 'online', checkpoint_at = now(),
          court_started_at = case when p_court <> me.court then now() else court_started_at end
    where id = me.id;
   if p_court <> me.court then perform public.mp_event(p_match, me.id, 'court_cleared', jsonb_build_object('court', me.court, 'score', p_score)); end if;
   if p_lives = 0 then perform public.mp_finish_player(me.id, 'out_of_lives');
-  elsif p_done and p_court = 120 then perform public.mp_finish_player(me.id, 'all_courts');
+  -- Court 120 cleared is the end of the run, "done" or not: a lost or
+  -- refused final checkpoint must not leave the player waiting for ever.
+  elsif p_court = 120 and public.mp_full(new_b, length(coalesce(nxt, cur))) then perform public.mp_finish_player(me.id, 'all_courts');
   end if;
   perform public.mp_refresh(p_match);
   return public.mp_state_json(p_match, u);
@@ -659,7 +791,8 @@ do $$
 declare f text;
 begin
   foreach f in array array[
-    'mp_fail(text)', 'mp_uid()', 'mp_name(text)', 'mp_rate(uuid,text,integer)', 'mp_event(uuid,uuid,text,jsonb)', 'mp_bits(text)',
+    'mp_fail(text)', 'mp_uid()', 'mp_name(text)', 'mp_rate(uuid,text,integer)', 'mp_event(uuid,uuid,text,jsonb)', 'mp_map(text,integer)',
+    'mp_full(bytea,integer)', 'mp_brick_max(text)', 'mp_match_secs()', 'mp_grace_secs()', 'mp_ends_at(uuid)', 'mp_sweep()',
     'mp_token_hash(text)', 'mp_new_token()', 'mp_finish_player(uuid,text)', 'mp_complete(uuid)', 'mp_refresh(uuid)', 'mp_state_json(uuid,uuid)'
   ] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);

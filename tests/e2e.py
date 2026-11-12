@@ -407,7 +407,23 @@ def desktop(browser, url):
     d.screen("title", 1.4)
     d.shot("02-title")
     ids = d.ev("__court.ui.regions.map(r=>r.id).join()")
-    check("landing screen: exactly two options, The Rally and Multiplayer", ids == "play,multiplayer", ids)
+    check("landing screen: the two cards (The Rally, Multiplayer), then Courts, Scores and Sound", ids == "play,multiplayer,courts,scores,sound", ids)
+    # The row under the cards opens what it says.
+    d.click("scores")
+    d.screen("scores", 0.6)
+    check("landing: SCORES opens the leaderboard", d.ev("__court.S.screen") == "scores")
+    d.ev("__court.go('title')")
+    d.screen("title", 0.8)
+    d.click("courts")
+    d.screen("courts", 0.6)
+    check("landing: COURTS opens the courts", d.ev("__court.S.screen") == "courts")
+    d.ev("__court.go('title')")
+    d.screen("title", 0.8)
+    d.click("sound")
+    d.wait("__court.S.overlayT>=1")
+    check("landing: SOUND opens the sound settings", d.ev("__court.S.overlayKind") == "sound")
+    d.ev("__court.S.overlay = null")
+    d.wait("__court.S.overlayT<=0")
 
     # --- sound controls (reached from the courts screen)
     d.click("play")
@@ -1489,14 +1505,8 @@ def bricks_in_groups(browser, url):
     d.ev("__court.S.timeScale=0.0001")
     time.sleep(0.2)
     hexes = d.ev(pix)
-    check("court 1 (game-3): bricks, the tennis racket (gold frame, red-banded grip), no characters",
-          "#cf6f4f" in hexes and "#e3b341" in hexes and "#c8352e" in hexes and "#f2c39a" not in hexes)
-    d.ev("__court.S.timeScale=1; __court.S.game.racket={t:0, off:0.123}")
-    check("a hit springs the racket and fades (RACKET_RING)", d.ev("(async()=>{const {RACKET_RING}=await import('/js/game.js'); return RACKET_RING})()") == 0.45)
-    time.sleep(0.7)
-    # The spring set above has run out (a real hit since may have started a new one).
-    check("the racket settles after the spring", d.ev("!__court.S.game.racket || __court.S.game.racket.off !== 0.123"))
-    d.ev("__court.S.timeScale=0.0001")
+    check("court 1: bricks, the black paddle (as on main), no characters, no racket",
+          "#cf6f4f" in hexes and "#22262d" in hexes and "#f2c39a" not in hexes and "#e3b341" not in hexes)
     d.ev("__court.S.timeScale=1")
     forms = d.ev("[...new Set(__court.LEVELS.map(l=>l.form).filter(Boolean))]")
     check("courts 6-120 are geometric formations (diamond, circle, ring, triangle...), at least 10 kinds", len(forms) >= 10, forms)
@@ -1597,6 +1607,7 @@ def signature(browser, url):
         area = f"{int(W * 0.68) if name == 'desktop' else 0},{H - 60},{W},{H}"  # on desktop, clear of the PLAY button
         # Two looks a second apart, at normal speed: the signature must not change.
         snap = lambda: {"cream": d.ev(f"{lit}({area},'#efe6c8')")["n"], "gold": d.ev(f"{lit}({area},'#f5e663')"), "white": d.ev(f"{lit}({area},'#ffffff')")["n"]}
+        d.wait("__court.S.t > 1")  # the landing screen (signature included) has faded in
         first = snap()
         time.sleep(1.0)
         second = snap()
@@ -1858,6 +1869,236 @@ def sounds_and_haptics(browser, url):
     b.close()
 
 
+# A multiplayer match against a stand-in Supabase client in the page: nothing
+# goes over the network. window.__answers holds what the next mp_checkpoint
+# calls get ('ok', 'network' or a refusal such as 'too_fast'); __delay holds
+# how long the next one takes (ms); __rpc records every mp_checkpoint call.
+STAND_IN = """;
+  window.COURT_CONFIG = {...window.COURT_CONFIG, supabaseUrl: 'https://stand-in.invalid', supabaseAnonKey: 'stand-in', multiplayer: true};
+  window.__rpc = []; window.__answers = []; window.__delay = []; window.__finished = false; window.__state = null; window.__stateFail = 0;
+  const state = (a) => ({ server_now: Date.now(), match: { id: 't', status: 'active' }, me: { finished: window.__finished, score: a.p_score, court: a.p_court, lives: a.p_lives, seq: a.p_seq }, opponent: null });
+  window.supabase = { createClient: () => ({
+    auth: { getSession: async () => ({ data: { session: {} } }) },
+    channel: () => ({ on() { return this; }, subscribe() { return this; } }), removeChannel() {},
+    rpc: async (fn, a) => {
+      if (fn !== 'mp_checkpoint') {
+        // A status read: window.__state() may shape it; __stateFail fails that many (no network).
+        if (window.__stateFail > 0) { window.__stateFail--; throw new Error('offline'); }
+        const base = { server_now: Date.now(), match: { id: 't', status: 'active' }, me: { finished: window.__finished }, opponent: null };
+        return { data: window.__state ? window.__state(base) : base };
+      }
+      window.__rpc.push({ t: performance.now(), seq: a.p_seq, score: a.p_score, lives: a.p_lives, broken: a.p_broken, done: a.p_done, court: a.p_court });
+      const say = window.__answers.shift() || 'ok';
+      const wait = window.__delay.shift() || 0;
+      if (wait) await new Promise((ok) => setTimeout(ok, wait));
+      if (say === 'network') throw new Error('offline');
+      if (say !== 'ok') return { error: { message: 'mp:' + say } };
+      if (a.p_done) window.__finished = true; // the stand-in server: a done checkpoint finishes the run
+      return { data: window.__state ? window.__state(state(a)) : state(a) };
+    } }) };
+"""
+
+
+def stand_in_match(browser, url):
+    ctx = browser.new_context(viewport={"width": 390, "height": 844})
+    ctx.add_init_script(RETURNING + STAND_IN)
+    # The solo board reads the same (stand-in) address: answer it here, empty.
+    ctx.route("https://stand-in.invalid/**", lambda r: r.fulfill(status=200, body="[]", content_type="application/json"))
+    d = Driver(ctx.new_page())
+    d.pg.goto(url)
+    d.screen("title", 2.5)
+    return ctx, d
+
+
+def checkpoint_retry(browser, url):
+    """Multiplayer checkpoints after a refusal: a wait (1.5 s, then 3 s...), no spam, nothing lost.
+    A stand-in Supabase client in the page answers; nothing goes over the network."""
+    print("multiplayer checkpoint retry")
+    ctx, d = stand_in_match(browser, url)
+    d.ev("__court.S.introSeen=true; __court.beginRun(0)")
+    d.wait("__court.S.screen==='play' && __court.S.game.ready", 20000)
+    d.ev("__court.S.timeScale=0.0001")  # the court holds still; the network side runs on the real clock
+    # A match in play: the last accepted checkpoint had 3 lives, the game now has 2 (urgent: sent at once).
+    d.ev("""(async()=>{ const {mp:M} = await import('/js/multiplayer.js');
+      window.__answers = ['too_fast', 'network', 'too_fast'];
+      __court.S.game.lives = 2;
+      Object.assign(M, { matchId: 't', game: true, seq: 5, sending: false, retryAt: 0, retryMs: 0, lastSentAt: 0,
+        sent: { score: 0, court: 1, lives: 3, broken: '' },
+        state: { match: { id: 't', status: 'active' }, me: { finished: false }, opponent: null } }); })()""")
+    time.sleep(2.0)
+    d.ev("__court.S.game.score += 50")  # progress made while waiting to retry
+    time.sleep(10.0)
+    calls = d.ev("window.__rpc")
+    m = d.ev("(async()=>{ const {mp:M} = await import('/js/multiplayer.js'); return { seq: M.seq, sent: M.sent, retryMs: M.retryMs, game: __court.S.game.score }; })()")
+    gaps = [round((b["t"] - a["t"]) / 1000, 2) for a, b in zip(calls, calls[1:4])]
+    check("retry: after a refusal it waits 1.5 s, then 3 s, then 6 s (an urgent update would otherwise go every frame)",
+          len(gaps) == 3 and 1.4 <= gaps[0] <= 2.0 and 2.9 <= gaps[1] <= 3.5 and 5.9 <= gaps[2] <= 6.6, gaps)
+    check("retry: no spam, 4 tries in 12 s (3 refused or failed, then accepted)", len(calls) == 4, len(calls))
+    check("retry: a refused update is not counted as sent (same sequence number until accepted)",
+          [c["seq"] for c in calls] == [6, 6, 6, 6] and m["seq"] == 6, [c["seq"] for c in calls])
+    check("retry: nothing lost, the accepted update carries everything since (the lost life and the 50 points)",
+          calls[-1]["lives"] == 2 and calls[-1]["score"] == calls[0]["score"] + 50 and m["sent"]["score"] == calls[-1]["score"], (calls[0]["score"], calls[-1]["score"], m["sent"]))
+    check("retry: once accepted, the wait resets", m["retryMs"] == 0)
+    check("no console errors (checkpoint retry)", not d.errors, d.errors[:3])
+    ctx.close()
+
+
+def final_update(browser, url):
+    """M2: the run's last checkpoint (done) is retried with done after a refusal,
+    and never sent over one already on its way (the two would share a number)."""
+    print("multiplayer final update")
+    count_bits = "((b)=>[...atob(b)].reduce((n,c)=>{let v=c.charCodeAt(0);while(v){n+=v&1;v>>=1}return n},0))"
+    setup = """(async()=>{ const {mp:M} = await import('/js/multiplayer.js');
+      Object.assign(M, { matchId: 't', game: true, seq: 5, sending: false, retryAt: 0, retryMs: 0, lastSentAt: 0, ended: null,
+        sent: { score: -1, court: 1, lives: 3, broken: '' },
+        state: { match: { id: 't', status: 'active' }, me: { finished: false }, opponent: null } }); })()"""
+    # The court cleared: every brick down and the game won, as Game.win() leaves it.
+    clear = "(()=>{ const g=__court.S.game; g.blocks.forEach(b=>b.alive=false); g.remaining=0; g.state='won'; return g.blocks.length })()"
+    end = "(async()=>{ const m = await import('/js/multiplayer.js'); m.onRunEnd(true); })()"
+
+    # 1. The final checkpoint is refused: the retry still says done, with every brick.
+    ctx, d = stand_in_match(browser, url)
+    d.ev("__court.S.introSeen=true; __court.beginRun(0)")
+    d.wait("__court.S.screen==='play' && __court.S.game.ready", 20000)
+    d.ev("__court.S.timeScale=0.0001")
+    d.ev(setup)
+    d.wait("window.__rpc.length >= 1", 5000)  # a regular checkpoint, accepted
+    time.sleep(0.3)
+    n = d.ev(clear)
+    d.ev("window.__rpc = []; window.__answers = ['too_fast']")
+    d.ev(end)
+    time.sleep(4.0)
+    calls = d.ev("window.__rpc")
+    bits = [d.ev(f"{count_bits}({json.dumps(c['broken'])})") for c in calls]
+    check("M2: the final checkpoint goes out at once, marked done, with every brick broken",
+          len(calls) >= 1 and calls[0]["done"] is True and bits[0] == n, (len(calls), calls[:1], bits[:1], n))
+    check("M2: refused, it is retried after the wait, still marked done (it used to go out without done)",
+          len(calls) == 2 and calls[1]["done"] is True and bits[1] == n and 1.4 <= (calls[1]["t"] - calls[0]["t"]) / 1000 <= 2.0,
+          [(c["done"], round(c["t"])) for c in calls])
+    check("M2: once accepted the player is finished and nothing more is sent",
+          d.ev("(async()=>{ const {mp:M} = await import('/js/multiplayer.js'); return M.state.me.finished === true && M.retryMs === 0; })()") and len(calls) == 2)
+    check("M2: the same number until accepted (a refusal is not counted)", [c["seq"] for c in calls] == [calls[0]["seq"]] * 2, [c["seq"] for c in calls])
+    check("no console errors (final update, refused)", not d.errors, d.errors[:3])
+    ctx.close()
+
+    # 2. The run ends while a regular checkpoint is still on its way.
+    ctx, d = stand_in_match(browser, url)
+    d.ev("__court.S.introSeen=true; __court.beginRun(0)")
+    d.wait("__court.S.screen==='play' && __court.S.game.ready", 20000)
+    d.ev("__court.S.timeScale=0.0001")
+    d.ev("window.__delay = [1200]")  # the first (regular) checkpoint takes 1.2 s
+    d.ev(setup)
+    d.wait("window.__rpc.length === 1", 5000)
+    n = d.ev(clear)
+    d.ev(end)
+    sent_at_once = d.ev("window.__rpc.length")
+    time.sleep(3.0)
+    calls = d.ev("window.__rpc")
+    check("M2 race: the final checkpoint waits for the one on its way (not sent over it)", sent_at_once == 1, sent_at_once)
+    check("M2 race: then it goes out with the next number, marked done, every brick broken",
+          len(calls) == 2 and calls[1]["seq"] == calls[0]["seq"] + 1 and calls[1]["done"] is True and d.ev(f"{count_bits}({json.dumps(calls[1]['broken'])})") == n,
+          [(c["seq"], c["done"]) for c in calls])
+    check("M2 race: the player ends finished", d.ev("(async()=>{ const {mp:M} = await import('/js/multiplayer.js'); return M.state.me.finished === true; })()"))
+    check("no console errors (final update, race)", not d.errors, d.errors[:3])
+    ctx.close()
+
+
+def match_time(browser, url):
+    """M-a: the match clock and the grace on screen, time's up mid-game, a reload, a reconnect."""
+    print("multiplayer match time")
+    M = "window.__mp"  # the multiplayer state, exposed by ?debug
+
+    def waited(d, expr, ms):
+        # True once expr holds (a plain expression: a promise would count as true at once).
+        try:
+            d.wait(expr, ms)
+            return True
+        except Exception:
+            return False
+    setup = """(async()=>{ const {mp:M} = await import('/js/multiplayer.js');
+      Object.assign(M, { matchId: 't', role: 'host', game: true, seq: 5, sending: false, retryAt: 0, retryMs: 0, lastSentAt: 0, ended: null, pollAt: 0,
+        sent: { score: 0, court: 1, lives: 3, broken: '' },
+        state: { match: { id: 't', status: 'active' }, me: { finished: false }, opponent: null } }); })()"""
+
+    def in_play(d):
+        d.ev("__court.S.introSeen=true; __court.beginRun(0)")
+        d.wait("__court.S.screen==='play' && __court.S.game.ready", 20000)
+        d.ev("__court.S.timeScale=0.0001; __court.S.mpGame = true")  # a match game: the opponent box is drawn
+        d.ev(setup)
+
+    # 1. The grace: the opponent is done, this player has 2:50 left: the clock shows in play.
+    ctx, d = stand_in_match(browser, url)
+    in_play(d)
+    d.ev("""void (window.__state = (b) => ({ ...b, match: { ...b.match, ends_at: Date.now() + 170000, time_ends_at: Date.now() + 20 * 60000 },
+             me: { finished: false }, opponent: { name: 'ANA', finished: true, connection: 'online', court: 3, score: 900, lives: 0 } }))""")
+    ok = waited(d, f"/^FINISH IN 2:[45]\\d$/.test({M}.shown.clock)", 6000)
+    check("M-a: once the opponent is done the grace clock shows in play (FINISH IN 2:5x)", ok, d.ev(f"{M}.shown.clock"))
+    # 2. No grace, 4 minutes of match left: the match clock shows; with 20 minutes left it does not.
+    d.ev("""void (window.__state = (b) => ({ ...b, match: { ...b.match, ends_at: Date.now() + 240000, time_ends_at: Date.now() + 240000 },
+             me: { finished: false }, opponent: { name: 'ANA', finished: false, connection: 'online', court: 3, score: 900, lives: 2 } }))""")
+    ok = waited(d, f"/^TIME [34]:\\d\\d$/.test({M}.shown.clock)", 6000)
+    check("M-a: in the last 5 minutes of the match the clock shows (TIME 4:00)", ok, d.ev(f"{M}.shown.clock"))
+    d.ev("""void (window.__state = (b) => ({ ...b, match: { ...b.match, ends_at: Date.now() + 20 * 60000, time_ends_at: Date.now() + 20 * 60000 },
+             me: { finished: false }, opponent: { name: 'ANA', finished: false, connection: 'online', court: 3, score: 900, lives: 2 } }))""")
+    ok = waited(d, f"{M}.shown.clock === ''", 6000)
+    check("M-a: with plenty of time left there is no clock", ok, d.ev(f"{M}.shown.clock"))
+    # 3. Time's up mid-game: the server ends this player's game; the game stops sending.
+    d.ev("__court.S.timeScale=1")  # screens change on game time
+    d.ev("""void (window.__state = (b) => ({ ...b, match: { ...b.match, ends_at: Date.now() - 1000, time_ends_at: Date.now() - 1000 },
+             me: { finished: true, finish_reason: 'time_up', final_score: 0, score: 0 }, opponent: { name: 'ANA', finished: true, connection: 'online', court: 3, score: 900, lives: 2 } }))""")
+    d.wait("__court.S.screen === 'mpwait'", 6000)
+    note = d.ev(f"(async()=>{M}.note)()")
+    n0 = d.ev("window.__rpc.length")
+    d.ev("__court.S.game.lives = 1")  # would be urgent if the game still reported
+    time.sleep(2.5)
+    check("M-a: time's up mid-game: on to the waiting screen with TIME'S UP", note == "TIME'S UP", note)
+    check("M-a: …and nothing more is sent for that game", d.ev("window.__rpc.length") == n0, (n0, d.ev("window.__rpc.length")))
+    # 4. The waiting screen shows how long the opponent has.
+    d.ev("""void (window.__state = (b) => ({ ...b, match: { ...b.match, ends_at: Date.now() + 150000, time_ends_at: Date.now() + 20 * 60000 },
+             me: { finished: true, finish_reason: 'out_of_lives', final_score: 300, score: 300 }, opponent: { name: 'ANA', finished: false, connection: 'online', court: 3, score: 900, lives: 2 } }))""")
+    ok = waited(d, f"/^ANA HAS 2:[23]\\d TO FINISH$/.test({M}.shown.wait)", 6000)
+    check("M-a: the waiting screen says how long the opponent has (ANA HAS 2:30 TO FINISH)", ok, d.ev(f"{M}.shown.wait"))
+    check("no console errors (match time)", not d.errors, d.errors[:3])
+    ctx.close()
+
+    # 5. Reconnect: the network drops for a few seconds mid-game, then comes back; nothing is lost.
+    ctx, d = stand_in_match(browser, url)
+    in_play(d)
+    d.ev("window.__stateFail = 2; window.__answers = ['network']; __court.S.game.lives = 2")
+    ok = waited(d, f"{M}.offline === true", 6000)
+    check("M-a reconnect: a dropped connection shows (RECONNECTING...)", ok)
+    d.ev("__court.S.game.score += 50")
+    waited(d, f"{M}.offline === false && {M}.sent && {M}.sent.lives === 2 && {M}.sent.score === 50", 15000)
+    got = d.ev(f"(async()=>{{ const m = {M}; return [__court.S.screen, m.offline, m.sent.lives, m.sent.score, m.reconnects]; }})()")
+    check("M-a reconnect: back online, the game carries on and its checkpoint (lost life, +50) is accepted",
+          got[0] == "play" and got[1] is False and got[2] == 2 and got[3] == 50, got)
+    check("no console errors (reconnect)", not d.errors, d.errors[:3])
+    ctx.close()
+
+    # 6. Refresh mid-match: the page reloads and the game comes back from the server's verified state.
+    for finished in (False, True):
+        ctx = browser.new_context(viewport={"width": 390, "height": 844})
+        me = ("{ finished: true, finish_reason: 'time_up', final_score: 120, score: 120, court: 2, lives: 2, broken: '', seq: 4 }" if finished
+              else "{ finished: false, score: 120, court: 2, lives: 2, broken: '', seq: 4 }")
+        ctx.add_init_script(RETURNING + STAND_IN + f"""
+          localStorage.setItem('the-court.mp', JSON.stringify({{ id: 't', role: 'guest' }}));
+          window.__state = (b) => ({{ ...b, match: {{ ...b.match, start_at: Date.now() - 60000, ends_at: Date.now() + 25 * 60000, time_ends_at: Date.now() + 25 * 60000 }},
+            me: {me}, opponent: {{ name: 'ANA', finished: false, connection: 'online', court: 3, score: 900, lives: 2 }} }});""")
+        ctx.route("https://stand-in.invalid/**", lambda r: r.fulfill(status=200, body="[]", content_type="application/json"))
+        d = Driver(ctx.new_page())
+        d.pg.goto(url)
+        if finished:
+            d.wait("__court.S.screen === 'mpwait'", 10000)
+            check("M-a refresh: reloading after time's up lands on the waiting screen, not a new game", d.ev("__court.S.screen") == "mpwait")
+        else:
+            d.wait("__court.S.mpGame && ['countdown','play'].includes(__court.S.screen)", 10000)
+            got = d.ev(f"(async()=>({{ court: __court.S.level + 1, score: __court.S.game.score, lives: __court.S.game.lives, seq: {M}.seq }}))()")
+            check("M-a refresh: reloading mid-match resumes the verified game (court 2, 120 points, 2 lives)",
+                  got == {"court": 2, "score": 120, "lives": 2, "seq": 4}, got)
+        check("no console errors (refresh)", not d.errors, d.errors[:3])
+        ctx.close()
+
+
 def main():
     srv = serve()
     url = f"http://127.0.0.1:{srv.server_address[1]}/?debug=1"
@@ -1882,6 +2123,9 @@ def main():
             signature(browser, url)
             finale(browser, url)
             board_and_share(browser, url)
+            checkpoint_retry(browser, url)
+            final_update(browser, url)
+            match_time(browser, url)
         finally:
             browser.close()
             srv.shutdown()

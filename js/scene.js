@@ -1335,93 +1335,18 @@ export function drawBall(cx, cy, r, hot = false) {
   }
 }
 
-export function drawPaddle(cx, y, hw, glow = false, hit = null, top = null) {
+export function drawPaddle(cx, y, hw, glow = false) {
   cx = Math.round(cx);
   y = Math.round(y);
   hw = Math.round(hw);
-  const k = hit ? Math.max(0, Math.min(1, hit.k)) : 0;
-  const wob = k * Math.sin((1 - k) * Math.PI * 5); // a damped spring, 2.5 bounces
-  const shadowY = y;
-  const dip = Math.round(wob * 4);
-  y += dip;
-  // A tennis racket lying on the court: the strung head spans the paddle's
-  // whole width (what the ball bounces off), and the throat and handle, with
-  // its grip and red band, stick out to the right beyond it.
-  const left = cx - hw;
-  const len = hw * 2;
-  const th = Math.max(9, Math.min(28, Math.round(len * 0.3))) | 1; // head height, odd for a centre line
-  // top: where the ball's underside meets the racket. The frame's top edge
-  // goes there, so a ball on the racket sits on the strings with no gap.
-  const ry0 = (th - 1) / 2;
-  const mid = top != null ? Math.round(top) + ry0 + 1 + dip : y - 4;
-  const headW = len;
-  const hx = cx;
-  const rx = hw;
-  const ry = ry0;
   ctx.globalAlpha = 0.32;
-  rrect(left + 1, shadowY - 2, Math.round(len * 1.5), 6, 3, '#07140a');
+  rrect(cx - hw + 1, y - 2, hw * 2, 8, 4, '#07140a');
   ctx.globalAlpha = 1;
-  const ix = cx + Math.round((hit ? hit.off : 0) * hw); // where the ball struck
-  const onHead = k > 0 && Math.abs(ix - hx) < rx - 2;
-  const frame = glow ? PAL.yellowHi : k > 0.75 ? '#fff2a8' : '#e3b341';
-  // Handle and shaft first, so the head sits over the join.
-  const shaftL = cx + hw - 2;
-  const handleL = cx + hw + Math.round(len * 0.12);
-  const right = handleL + Math.round(len * 0.4);
-  rect(shaftL, mid - 2, handleL - shaftL, 5, '#1a1206');
-  rect(shaftL, mid - 1, handleL - shaftL, 3, frame);
-  rect(handleL, mid - 3, right - handleL, 7, '#1a1206');
-  rect(handleL + 1, mid - 2, right - handleL - 2, 5, '#9a6a3a');
-  for (let gx = handleL + 5; gx < right - 3; gx += 3) rect(gx, mid - 2, 1, 5, '#6e4724'); // grip wrap
-  rect(handleL + 1, mid - 2, 2, 5, '#c8352e'); // red band
-  rect(right - 3, mid - 2, 2, 5, '#e3b341'); // butt cap
-  rect(handleL + 1, mid - 2, right - handleL - 2, 1, 'rgba(255,255,255,0.18)');
-  // Head: dark rim, gold frame, strung face.
-  ellipse(hx, mid, rx + 1, ry + 1, '#1a1206');
-  ellipse(hx, mid, rx, ry, frame);
-  ellipse(hx, mid, rx - 2, ry - 2, '#262b31');
-  // Strings. Struck, they dent round the impact (most at the point, less
-  // further off) and spring back with the racket, lit up where the ball hit.
-  const spread = Math.max(4, rx * 0.45);
-  const dent = (x) => (onHead ? wob * Math.max(3, ry * 0.6) * Math.exp(-((x - ix) * (x - ix)) / (spread * spread)) : 0);
-  const lit = (x) => onHead && k > 0.3 && Math.abs(x - ix) < spread * 0.8;
-  for (let dx = -rx + 3; dx <= rx - 3; dx += 2) {
-    const half = Math.floor((ry - 2) * Math.sqrt(Math.max(0, 1 - (dx * dx) / ((rx - 2) * (rx - 2)))));
-    if (half <= 0) continue;
-    const x = hx + dx;
-    const sag = Math.round(dent(x));
-    ctx.fillStyle = lit(x) ? '#eef3f8' : '#8b939e';
-    ctx.fillRect(x, mid - half + Math.max(0, sag), 1, half * 2 + 1 - Math.abs(sag));
-  }
-  for (let dy = -ry + 3; dy <= ry - 3; dy += 2) {
-    const half = Math.floor((rx - 2) * Math.sqrt(Math.max(0, 1 - (dy * dy) / ((ry - 2) * (ry - 2)))));
-    if (half <= 0) continue;
-    if (!onHead) {
-      ctx.fillStyle = '#8b939e';
-      ctx.fillRect(hx - half, mid + dy, half * 2 + 1, 1);
-      continue;
-    }
-    // Pixel by pixel, so the string can bow.
-    const edge = 1 - Math.abs(dy) / ry; // the middle strings give the most
-    for (let x = hx - half; x <= hx + half; x++) {
-      ctx.fillStyle = lit(x) ? '#eef3f8' : '#8b939e';
-      ctx.fillRect(x, mid + dy + Math.round(dent(x) * edge), 1, 1);
-    }
-  }
-  if (k > 0) {
-    // A ring rippling out from the strike, and a few lines of force under it.
-    const r = 2 + (1 - k) * (onHead ? rx * 0.9 : 8);
-    ctx.globalAlpha = k * 0.9;
-    ctx.fillStyle = '#fff6c8';
-    for (let a = 0; a < 16; a++) {
-      const t = (a / 16) * Math.PI * 2;
-      ctx.fillRect(Math.round(ix + Math.cos(t) * r), Math.round(mid + Math.sin(t) * r * 0.55), 1, 1);
-    }
-    if (k > 0.45) {
-      ctx.fillStyle = '#ffffff';
-      for (const d of [-4, 0, 4]) ctx.fillRect(ix + d, mid + ry + 3 + Math.round((1 - k) * 4), 1, 3);
-    }
-    ctx.globalAlpha = 1;
-  }
-  rect(hx - Math.round(rx * 0.5), mid - ry, Math.round(rx), 1, glow ? '#fff6c8' : '#f6d77a'); // shine on the frame
+  // On a Black Court the dark paddle gets a pale rim so it stays easy to see.
+  if (theme && theme.isBlackCourt) rrect(cx - hw - 1, y - 12, hw * 2 + 2, 16, 7, '#8d96a3');
+  rrect(cx - hw, y - 11, hw * 2, 14, 6, '#0d0f12');
+  rrect(cx - hw + 1, y - 11, hw * 2 - 2, 9, 5, '#22262d');
+  rect(cx - hw + 5, y - 10, hw * 2 - 10, 1, '#4a505b');
+  rect(cx - hw + 3, y - 3, hw * 2 - 6, 1, glow ? PAL.yellowHi : PAL.yellow);
+  if (glow) rect(cx - hw + 3, y - 4, hw * 2 - 6, 1, PAL.yellowLo);
 }

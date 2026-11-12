@@ -7,7 +7,7 @@ import { Game, TOOLS, START_LIVES, RUSH_AT } from './game.js';
 import { sections } from './rules.js';
 import { LEVELS } from './levels.js';
 import { drawGame, drawHUD, hudRows } from './render.js';
-import { ui, beginUI, region, hitTest, pill, ghost, roundBtn, iconBtn, slider, panel } from './ui.js';
+import { ui, beginUI, region, hitTest, pill, ghost, card, cardArt, roundBtn, iconBtn, slider, panel } from './ui.js';
 import { AudioSys, COURT_TRACKS, RUSH_TEMPO } from './audio.js';
 import { haptics } from './haptics.js';
 import { setupMultiplayer, openMultiplayer, bootMultiplayer, tickMultiplayer, drawOpponentHUD, onRunEnd, onCourtCleared, onPlayStarted, onPause, applyBroken, typing, typeChar, submitName, leaveMatch, MP_SCREENS, MP_SCREEN_NAMES, mp } from './multiplayer.js';
@@ -1106,10 +1106,20 @@ const SCREENS = {
       rect(sx - arm, sy, arm * 2 + 1, 1, '#ffffff');
       rect(sx, sy - arm, 1, arm * 2 + 1, '#ffffff');
     }
-    const y = wb + 46 + Math.round(H * 0.04) + Math.round((1 - k) * 8);
-    // Two ways in: The Rally (solo, as always) and Multiplayer.
-    pill('play', 'THE RALLY', W / 2, y, 150, 23, play, { scale: 2, sp: 2, pulse: S.time });
-    pill('multiplayer', 'MULTIPLAYER', W / 2, y + 33, 150, 19, openMultiplayer, { sp: 2 });
+    // Two ways in, as cards: The Rally (solo, as always) and Multiplayer; under
+    // them Courts, Scores and Sound. Wide screens set the cards side by side;
+    // short ones bring everything up over the brick pyramid.
+    const L = titleLayout();
+    const lift = Math.round((1 - k) * 8);
+    card('play', 'THE RALLY', 'PLAY SOLO • BEAT YOUR BEST', L.a.x, L.a.y + lift, L.cw, L.ch, play, { pulse: S.time, t: S.time, art: cardArt.court });
+    card('multiplayer', 'MULTIPLAYER', 'CHALLENGE YOUR FRIENDS', L.b.x, L.b.y + lift, L.cw, L.ch, openMultiplayer, { style: 'dark', t: S.time + 1.2, art: cardArt.rackets });
+    const bw = L.bw;
+    ghost('courts', 'COURTS', L.row.x + bw / 2, L.row.y + lift, bw, 17, () => go('courts'), { sp: 1, icon: 'bricks' });
+    ghost('scores', 'SCORES', L.row.x + bw * 1.5 + 5, L.row.y + lift, bw, 17, () => {
+      S.board = { rank: -1, fromRun: false };
+      go('scores');
+    }, { sp: 1, icon: 'trophy' });
+    ghost('sound', 'SOUND', L.row.x + bw * 2.5 + 10, L.row.y + lift, bw, 17, openSound, { sp: 1, icon: 'sound' });
     drawSignature(k);
     ctx.globalAlpha = 1;
     S.primary = play;
@@ -1926,15 +1936,48 @@ function sigMask(str, sp) {
   return { px, w: mw, h: mh };
 }
 
-function drawSignature(k) {
+// Where the signature plate sits: bottom right on wide screens, else bottom centre.
+function sigBox() {
   if (!sigMasks) sigMasks = { by: sigMask(SIG.by, 2), name: sigMask(SIG.name, 1) };
+  const { by, name } = sigMasks;
+  const bw = Math.max(by.w, name.w * SIG.zoom) + 14;
+  const bh = by.h + 4 + name.h * SIG.zoom + 10;
+  return { x: W >= 400 ? W - 8 - bw : Math.round(W / 2 - bw / 2), y: H - 6 - bh, w: bw, h: bh };
+}
+
+// The landing screen's cards and button row, fitted between the horizon and
+// the signature: stacked on narrow screens, side by side on wide ones.
+function titleLayout() {
+  const wide = W >= 400;
+  const tall = H >= 440;
+  const sig = sigBox();
+  const ch = tall ? 36 : wide ? 32 : 28;
+  const gap = tall ? 8 : 6;
+  const rowGap = tall ? 12 : 7;
+  if (wide) {
+    const cw = Math.min(206, Math.floor((W - 48) / 2));
+    const x = Math.round((W - cw * 2 - 8) / 2);
+    const bw = Math.min(84, Math.floor((cw * 2 + 8 - 10) / 3));
+    const rx = Math.round(W / 2 - (bw * 3 + 10) / 2);
+    const clear = rx + bw * 3 + 10 < sig.x - 4; // the row passes left of the signature
+    const limit = (clear ? H - 6 : sig.y - 4) - (ch + 4 + rowGap + 19);
+    const top = Math.max(P.wb + 6, Math.min(P.wb + 40 + Math.round(H * 0.04), limit));
+    return { cw, ch, bw, a: { x, y: top }, b: { x: x + cw + 8, y: top }, row: { x: rx, y: top + ch + 4 + rowGap } };
+  }
+  const cw = Math.min(208, W - 24);
+  const x = Math.round((W - cw) / 2);
+  const bw = Math.floor((cw - 10) / 3);
+  const total = (ch + 4) * 2 + gap + rowGap + 19;
+  const limit = sig.y - (tall ? 10 : 4) - total;
+  const top = Math.max(P.wb + 4, Math.min(P.wb + 46 + Math.round(H * 0.04), limit));
+  return { cw, ch, bw, a: { x, y: top }, b: { x, y: top + ch + 4 + gap }, row: { x, y: top + (ch + 4) * 2 + gap + rowGap } };
+}
+
+function drawSignature(k) {
+  const { x: x0, y: y0, w: bw, h: bh } = sigBox(); // (also makes sigMasks)
   const { by, name } = sigMasks;
   const z = SIG.zoom;
   const t = S.time;
-  const bw = Math.max(by.w, name.w * z) + 14;
-  const bh = by.h + 4 + name.h * z + 10;
-  const x0 = W >= 400 ? W - 8 - bw : Math.round(W / 2 - bw / 2);
-  const y0 = H - 6 - bh;
   const a0 = ctx.globalAlpha;
   const sweep = (t % 2.6) / 2.6; // the light's run across YASHISH, then a rest
   // The plate: a dark tile whose gold edge lights up as the light passes.
@@ -2263,6 +2306,11 @@ function startMatchGame(levelIndex, { lives, score }, broken, wait) {
   S.level = clamp(levelIndex, 0, LEVELS.length - 1);
   S.game = new Game(LEVELS[S.level], onGameEvent, Math.random, { lives, score });
   applyBroken(S.game, broken);
+  // Rejoining on a court already cleared (its bonus already counted): play on from the next one.
+  if (S.game.remaining === 0 && S.level + 1 < LEVELS.length) {
+    S.level++;
+    S.game = new Game(LEVELS[S.level], onGameEvent, Math.random, { lives, score });
+  }
   S.ending = 0;
   S.countFrom = Math.max(BEAT, wait || 0);
   if (S.screen === 'countdown') enter('countdown');

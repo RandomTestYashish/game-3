@@ -25,7 +25,6 @@ export const PADDLE_Y = WH - 34; // just in front of the baseline
 export const START_LIVES = 3; // a run's lives; a lost life never comes back
 export const MAX_BALLS = 9;
 export const MAX_DROPS = 2; // tools falling at once
-export const RACKET_RING = 0.45; // seconds the racket strings spring after a hit
 // Power Rush: a tool falls from the far end every this many seconds (min, max).
 export const RAIN_EVERY = [1.4, 2.4];
 // Power Rush: once only this share of a court's blocks is left, tools drop on
@@ -68,7 +67,6 @@ export class Game {
     this.fx = { smash: 0, freeze: 0, expand: 0, lowgrav: 0 };
     this.sinceDrop = 0;
     this.rush = false; // the Power Rush at the end of the court
-    this.racket = null; // the last strike on the racket, for its spring (visual only)
     this.shake = 0;
     this.paddle = { x: WW / 2, y: PADDLE_Y, w: this.padW, d: 8 };
     this.balls = [];
@@ -176,7 +174,6 @@ export class Game {
   }
 
   update(dt, axis = 0) {
-    if (this.racket && (this.racket.t += dt) > RACKET_RING) this.racket = null;
     this.t += dt;
     this.shake = Math.max(0, this.shake - dt);
     const p = this.paddle;
@@ -299,7 +296,6 @@ export class Game {
       ball.speed = Math.min(ball.speed * SPEED_UP, this.level.speed * SPEED_CAP);
       ball.vz = 70;
       this.combo = 0;
-      this.racket = { t: 0, off };
       this.emit('paddle', off, { x: ball.x, speed: ball.speed / this.level.speed });
       return;
     }
