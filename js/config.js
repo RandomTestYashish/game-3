@@ -14,14 +14,13 @@
 
 // game-3 (branch code-4) is the multiplayer preview. It must never touch the
 // live game's data or analytics, so it points at its own DEVELOPMENT
-// Supabase project (filled in by scripts/mp_setup.py) and sends no PostHog
-// events until a separate dev PostHog project key is given. Until the dev
-// project exists, the board stays on this device and multiplayer is off.
+// Supabase project (the-court-multiplayer-dev) and sends no PostHog events
+// until a separate dev PostHog project key is given.
 const DEFAULTS = {
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  supabaseUrl: 'https://jntfnwoyfvkjunvribgh.supabase.co',
+  supabaseAnonKey: 'sb_publishable_t0UuwoJdFcxPtje7yq7dAg_PRlT6tSP',
   table: 'thecourt',
-  multiplayer: false, // true once the dev project is set up
+  multiplayer: true, // on: game-3 plays against the dev project
   // PostHog analytics (js/analytics.js). Leave the key empty for no analytics.
   // Use the *project* API key ("phc_..."), from PostHog -> Settings -> Project.
   // It is public by design. NEVER put a personal API key ("phx_...") here.
