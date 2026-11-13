@@ -863,7 +863,7 @@ function wrapped(str, x, y, c, max = W - 40) {
 }
 
 function box(k, h, style, draw) {
-  const w = Math.min(W - 16, 220);
+  const w = Math.min(W - 16, W >= 400 ? 300 : 220); // wider on desktop
   const x = Math.round((W - w) / 2);
   const y = Math.max(6, Math.round((H - h) / 2));
   panel(k, x, y, w, h, style, () => draw(x, y, w));
@@ -1004,8 +1004,8 @@ export const MP_SCREENS = {
     const s = S();
     const on = mpEnabled();
     const open = M.matchId && match() && !TERMINAL.has(match().status);
-    const cards = on ? (open ? 4 : 3) : 0;
-    const h = on ? 74 + cards * 41 + 26 : 140;
+    const cards = on ? (open ? 3 : 2) : 0;
+    const h = on ? 72 + cards * 45 + 21 + 28 : 140;
     box(k, h, 'dark', (x, y, w) => {
       heading(x, y, w, 'MULTIPLAYER', 'CHALLENGE YOUR FRIENDS', 'rackets', s.time);
       if (!on) {
@@ -1014,30 +1014,35 @@ export const MP_SCREENS = {
         return;
       }
       // The rules at a glance.
-      const chips = [['3 LIVES', 'heart'], ['30 MIN', 'clock'], ['TOP SCORE', 'crown']];
-      const widths = chips.map(([c]) => textW(c) + 22);
-      let cx = Math.round(W / 2 - (widths.reduce((a, b) => a + b, 0) + 8) / 2);
-      chips.forEach(([c, ic], i) => {
-        chip(cx + widths[i] / 2, y + 56, c, ic, i === 2 ? PAL.yellow : PAL.cream);
-        cx += widths[i] + 4;
+      // The rules at a glance, on one quiet line.
+      const rules = ['3 LIVES', '30 MIN', 'TOP SCORE WINS'];
+      const rw = rules.reduce((a, r) => a + textW(r, 1, 1), 0) + 2 * 14;
+      let rx = Math.round(W / 2 - rw / 2);
+      rules.forEach((r, i) => {
+        rx += text(r, rx, y + 58, i === 2 ? PAL.yellow : PAL.cream, { sp: 1 });
+        if (i < 2) {
+          rect(rx + 6, y + 61, 2, 2, PAL.dim);
+          rx += 14;
+        }
       });
       const cw2 = w - 20;
-      let cy = y + 76;
-      const next = () => (cy += 41) - 41;
+      let cy = y + 72;
+      const next = () => (cy += 45) - 45;
       if (open) {
-        card('mpreturn', 'YOUR MATCH', 'BACK TO IT • IT IS STILL ON', x + 10, next(), cw2, 32, () => route(true), { pulse: s.time, t: s.time, art: cardArt.court });
-        card('mphost', 'NEW MATCH', 'HOST ANOTHER • NEW LINK', x + 10, next(), cw2, 32, hostNew, { style: 'dark', t: s.time, art: cardArt.invite });
+        card('mpreturn', 'YOUR MATCH', 'IT IS STILL ON', x + 10, next(), cw2, 36, () => route(true), { t: s.time, art: cardArt.court });
+        card('mphost', 'NEW MATCH', 'NEW LINK', x + 10, next(), cw2, 36, hostNew, { style: 'dark', t: s.time, art: cardArt.invite });
       } else {
-        card('mphost', 'NEW MATCH', 'SEND A LINK • VALID 1 HOUR', x + 10, next(), cw2, 32, hostNew, { pulse: s.time, t: s.time, art: cardArt.invite });
+        card('mphost', 'NEW MATCH', 'LINK VALID 1 HOUR', x + 10, next(), cw2, 36, hostNew, { t: s.time, art: cardArt.invite });
       }
-      card('mpboard', 'FRIENDS', 'BOARD • WINS, THEN LOSSES', x + 10, next(), cw2, 32, () => {
+      card('mpboard', 'FRIENDS', 'WINS, THEN LOSSES', x + 10, next(), cw2, 36, () => {
         loadBoard();
         A.go('mpboard');
       }, { style: 'dark', t: s.time + 0.7, art: cardArt.cup });
-      card('mphistory', 'HISTORY', 'YOUR LAST 20 MATCHES', x + 10, next(), cw2, 32, () => {
+      // History: a plain button under the cards.
+      ghost('mphistory', 'HISTORY', W / 2, cy + 1, cw2, 15, () => {
         loadHistory();
         A.go('mphistory');
-      }, { style: 'dark', t: s.time + 1.4, art: cardArt.list });
+      }, { sp: 2 });
       ghost('back', 'BACK', W / 2, y + h - 23, 104, 15, () => A.go('title'), { icon: 'back' });
     });
     s.primary = open ? () => route(true) : on ? hostNew : null;

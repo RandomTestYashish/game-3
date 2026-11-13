@@ -92,7 +92,7 @@ export function card(id, title, sub, x, y, w, h, fn, o = {}) {
   const tsp = textW(title, ts, 1) + 1 <= room ? 1 : 0;
   const th = 7 * ts;
   const subOk = sub && h >= 32;
-  const block = th + (subOk ? 9 : 0);
+  const block = th + (subOk ? 11 : 0); // a clear gap between title and subtitle
   const ty = fy + Math.round((h - block) / 2);
   // Title only (no subtitle): centred in the space after the divider.
   const tcx = sub ? tx : Math.round(tx + (room - textW(title, ts, tsp)) / 2);
@@ -102,10 +102,10 @@ export function card(id, title, sub, x, y, w, h, fn, o = {}) {
     const sc = gold ? '#3b4a22' : '#a9bda8';
     const sp = textW(sub.replace('•', '  '), 1, 1) <= room ? 1 : 0;
     let sx = tx;
-    sx += text(a, sx, ty + th + 2, sc, { sp });
+    sx += text(a, sx, ty + th + 4, sc, { sp });
     if (b != null) {
-      rect(sx + 3, ty + th + 5, 2, 2, sc);
-      text(b, sx + 8, ty + th + 2, sc, { sp });
+      rect(sx + 3, ty + th + 7, 2, 2, sc);
+      text(b, sx + 8, ty + th + 4, sc, { sp });
     }
   }
   // The arrow, nudging forward now and then.
