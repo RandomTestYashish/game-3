@@ -11,7 +11,7 @@
 //   order, own pace) -> when both are out (or a player is gone for 30 s) the
 //   server declares the result -> rematch / share / friends board / history.
 
-import { W, H, ctx, PAL, rect, rrect, disc, text, textW, serif, wrap, icon, sparkle, clamp } from './gfx.js';
+import { W, H, ctx, PAL, rect, rrect, disc, text, textW, serif, wrap, icon, sparkle, clamp, cup, laurel, rays, METAL } from './gfx.js';
 import { ui, region, pill, ghost, card, cardArt, panel, iconBtn } from './ui.js';
 import { mpEnabled, connect, call, watch, serverNow } from './mpnet.js';
 import { drawInviteCard, drawResultStory, toBlob } from './mpcards.js';
@@ -876,6 +876,59 @@ function boardBack() {
   A.go(to);
 }
 
+// The result screen's picture, in a 42-pixel band at the top (cy = top):
+// won: a gold cup popping up over turning rays, laurels and falling
+// confetti; lost: a rain cloud over a drooping racket; draw: two silver cups.
+function resultArt(r, cx, top, w, t, time) {
+  const pop = clamp(t / 0.45, 0, 1);
+  const bounce = pop < 1 ? Math.round(Math.sin(pop * Math.PI) * -6 + (1 - pop) * 12) : 0;
+  if (r === 'won') {
+    rays(cx, top + 22, 8, 30 + Math.round(Math.sin(time * 2) * 2), time, '#f2b632');
+    laurel(cx, top + 15, 27, -1, 6);
+    laurel(cx, top + 15, 27, 1, 6);
+    if (pop > 0) cup(cx, top + 6 + bounce, 2, METAL.gold);
+    // Confetti: falling, wrapping round the band.
+    const colours = ['#f2b632', '#e0503a', '#3f9a4f', '#2d4f9a', '#ff6fa8'];
+    for (let i = 0; i < 22; i++) {
+      const px = cx - w / 2 + 8 + ((i * 47) % (w - 16));
+      const py = top + ((time * (14 + (i % 5) * 4) + i * 11) % 44);
+      const sway = Math.round(Math.sin(time * 3 + i) * 2);
+      rect(px + sway, py, i % 3 ? 2 : 1, 2, colours[i % colours.length]);
+    }
+    sparkle(cx - 34, top + 8, 1 + (Math.floor(time * 3) % 2), '#f2b632');
+    sparkle(cx + 34, top + 14, 2 - (Math.floor(time * 3) % 2), '#f2b632');
+  } else if (r === 'lost') {
+    // A racket, head down, and a cloud raining on it.
+    const rx = cx + 6;
+    const ry = top + 30 + Math.max(0, bounce);
+    for (let i = 0; i < 9; i++) rect(rx - 10 + i, ry - 12 + i, 2, 2, i > 5 ? '#8a5a2b' : '#c98a4e');
+    disc(rx + 2, ry, 7, PAL.ink);
+    disc(rx + 2, ry, 6, '#cbbd92');
+    disc(rx + 2, ry, 5, '#a8323a');
+    for (let d = -3; d <= 3; d += 2) {
+      rect(rx + 2 + d, ry - 4, 1, 9, '#f4f1de');
+      rect(rx - 2, ry + d, 9, 1, '#f4f1de');
+    }
+    const cyy = top + 4 + Math.round(Math.sin(time * 1.5));
+    for (const [dx, rr] of [[-10, 6], [-2, 8], [8, 6], [14, 4]]) disc(cx + dx, cyy + 8, rr, '#6b7280');
+    for (const [dx, rr] of [[-10, 5], [-2, 7], [8, 5], [14, 3]]) disc(cx + dx, cyy + 7, rr, '#9aa3ad');
+    for (let i = 0; i < 7; i++) {
+      const dy = (time * 30 + i * 7) % 16;
+      rect(cx - 12 + i * 4, cyy + 16 + dy, 1, 3, '#5b8fd8');
+    }
+  } else {
+    // Two silver cups side by side, nodding in turn.
+    const nod = (i) => Math.round(Math.sin(time * 3 + i * Math.PI) * 1);
+    if (pop > 0) {
+      cup(cx - 22, top + 12 + bounce + nod(0), 1, METAL.silver);
+      cup(cx + 22, top + 12 + bounce + nod(1), 1, METAL.silver);
+    }
+    rrect(cx - 7, top + 18, 14, 11, 4, PAL.ink);
+    text('=', cx, top + 20, PAL.yellow, { align: 'center' });
+    sparkle(cx, top + 6, 1 + (Math.floor(time * 3) % 2), '#8c98a4');
+  }
+}
+
 // The two players' colours: your racket is strung blue, your friend's red.
 const STRINGS = { me: '#2d4f9a', opp: '#a8323a' };
 
@@ -1133,8 +1186,8 @@ export const MP_SCREENS = {
         if (b.connection === 'reconnecting') text('RECONNECTING... UP TO 30 S', W / 2, y + 94, PAL.yellow, { align: 'center' });
         else if (!b.finished && timeLeft() != null) text((M.shown.wait = b.name + ' HAS ' + mmss(timeLeft()) + ' TO FINISH'), W / 2, y + 94, PAL.yellow, { align: 'center' });
       }
-      text('THE RESULT APPEARS WHEN BOTH ARE DONE' + '.'.repeat(1 + (Math.floor(s.time * 2) % 3)), W / 2, y + 108, PAL.dim, { align: 'center' });
-      ghost('home', 'HOME (SEE IT IN HISTORY)', W / 2, y + 132, w - 30, 15, () => {
+      text('RESULT WHEN BOTH ARE DONE' + '.'.repeat(1 + (Math.floor(s.time * 2) % 3)), W / 2, y + 108, PAL.dim, { align: 'center' });
+      ghost('home', 'HOME - SEE IT IN HISTORY', W / 2, y + 132, w - 30, 15, () => {
         endLocal();
         A.go('title');
       });
@@ -1150,29 +1203,36 @@ export const MP_SCREENS = {
     const m = match();
     if (!a || !b || !m) return;
     const r = resultKind();
-    const head = r === 'draw' ? "IT'S A DRAW!" : r === 'won' ? a.name + ' WINS!' : 'YOU LOST';
-    const h = M.stash ? 236 : 214;
+    const head = r === 'draw' ? "IT'S A DRAW!" : r === 'won' ? 'YOU WIN!' : 'YOU LOST';
+    const h = M.stash ? 270 : 248;
+    const t = s.t; // time on this screen: the illustration pops in, the scores count up
     box(k, h, 'cream', (x, y, w) => {
+      resultArt(r, W / 2, y + 4, w, t, s.time);
       const hs = textW(head, 2, 1) <= w - 20 ? 2 : 1;
-      text(head, W / 2, y + 12, r === 'lost' ? '#b3541e' : PAL.ink, { align: 'center', scale: hs, sp: 1 });
-      if (r === 'won') {
-        sparkle(x + 16, y + 18, 2);
-        sparkle(x + w - 18, y + 14, 1, '#ff6fa8');
-      }
+      text(head, W / 2, y + 50, r === 'lost' ? '#b3541e' : r === 'won' ? '#3f7d38' : PAL.ink, { align: 'center', scale: hs, sp: 2, shadow: PAL.creamLo });
+      // The two scores, counting up from 0, the winner's with a star.
+      const up = clamp(t / 1.1, 0, 1);
+      const ease = 1 - Math.pow(1 - up, 3);
       const col = (p, cx, won) => {
-        text(p.name, cx, y + 42, won ? '#b3541e' : PAL.ink, { align: 'center', sp: 1 });
-        text(String(p.final_score ?? p.score), cx, y + 54, PAL.ink, { align: 'center', scale: 2, sp: 1 });
-        text('COURT ' + p.court, cx, y + 72, '#7d7354', { align: 'center' });
+        if (won) {
+          const bob = Math.round(Math.sin(s.time * 4) * 1);
+          icon('star', cx - 5, y + 66 + bob, '#f2b632');
+        }
+        text(p.name, cx, y + 78, won ? '#b3541e' : PAL.ink, { align: 'center', sp: 1 });
+        const score = Math.round((p.final_score ?? p.score) * ease);
+        const sc = textW(String(score), 2, 1) <= w / 2 - 12 ? 2 : 1;
+        text(String(score), cx, y + 90, won ? '#3f7d38' : PAL.ink, { align: 'center', scale: sc, sp: 1 });
+        text('COURT ' + p.court, cx, y + 107, '#7d7354', { align: 'center' });
       };
       col(a, W / 2 - w / 4, r === 'won');
       col(b, W / 2 + w / 4, r === 'lost');
-      rect(W / 2, y + 40, 1, 40, PAL.creamLo);
-      text('VERIFIED RESULT. MATCH COMPLETE.', W / 2, y + 88, '#3f7d38', { align: 'center' });
+      rect(W / 2, y + 74, 1, 40, PAL.creamLo);
+      text('VERIFIED RESULT', W / 2, y + 120, '#3f7d38', { align: 'center', sp: 1 });
       const rm = b.declined ? 'DECLINED' : M.rematchAsked || a.rematch ? 'ASKED' : '';
-      if (b.rematch && !a.rematch && !b.declined) text(b.name + ' WANTS A REMATCH!', W / 2, y + 100, '#b3541e', { align: 'center' });
-      pill('mprematch', rm === 'ASKED' ? 'WAITING FOR ' + b.name : rm === 'DECLINED' ? 'NO REMATCH' : 'REMATCH', W / 2, y + 112, 150, 19, rematch, { sp: 1 });
-      ghost('mpsharer', 'SHARE RESULT', W / 2, y + 142, 150, 15, shareResult);
-      ghost('mpboard', 'FRIENDS BOARD', W / 2, y + 163, 150, 15, () => {
+      if (b.rematch && !a.rematch && !b.declined) text(b.name + ' WANTS A REMATCH!', W / 2, y + 131, '#b3541e', { align: 'center' });
+      pill('mprematch', rm === 'ASKED' ? 'WAITING FOR ' + b.name : rm === 'DECLINED' ? 'NO REMATCH' : 'REMATCH', W / 2, y + 143, 150, 19, rematch, { sp: 1, pulse: rm ? null : s.time });
+      ghost('mpsharer', 'SHARE RESULT', W / 2, y + 173, 150, 15, shareResult);
+      ghost('mpboard', 'FRIENDS BOARD', W / 2, y + 194, 150, 15, () => {
         loadBoard();
         A.go('mpboard');
       });
@@ -1181,9 +1241,9 @@ export const MP_SCREENS = {
         endLocal();
         A.go('title');
       };
-      ghost('home', 'HOME', W / 2, y + 184, 150, 15, home);
+      ghost('home', 'HOME', W / 2, y + 215, 150, 15, home);
       if (M.stash) {
-        ghost('mpsolo', 'BACK TO YOUR RALLY', W / 2, y + 205, 150, 15, () => {
+        ghost('mpsolo', 'BACK TO YOUR RALLY', W / 2, y + 237, 150, 15, () => {
           call('mp_decline', { p_match: M.matchId });
           endLocal();
           restoreSolo();
