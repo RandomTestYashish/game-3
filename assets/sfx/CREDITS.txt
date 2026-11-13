@@ -1,0 +1,4 @@
+crowd-applause.m4a: "Ending show audience clapping" (mixkit-ending-show-audience-clapping-478)
+from Mixkit (https://mixkit.co/free-sound-effects/), under the Mixkit Sound Effects
+Free License (free for commercial and personal use; no attribution required).
+Converted from the original WAV to mono AAC (96 kbps) for the web.

@@ -152,13 +152,15 @@ function onGameEvent(type, arg, info) {
     else if (S.breaks.length >= BURST_BREAKS) crowdCheer(S.breaks.length >= 5 ? 2 : 1);
     else if (arg === 3) crowdReact('clap'); // a nice little run
   }
-  if (type === 'power' && arg === 'multiball') crowdCheer(2); // the stands erupt
-  else if (type === 'power') crowdReact('clap'); // a tool caught
-  if (type === 'power' && arg === 'multiball') audio.sfx('roar');
+  if (type === 'power' && arg === 'multiball') {
+    // The stands erupt: the fans jump (a cheer's look) to the roar's sound.
+    S.crowd = { at: S.time, big: 2, kind: 'cheer' };
+    audio.sfx('roar', 1, lastPlace());
+  } else if (type === 'power') crowdReact('clap'); // a tool caught
   if (type === 'paddle' && Math.abs(arg || 0) > 0.8) crowdReact('gasp'); // saved off the edge
   if (type === 'rush') audio.sfx('chant', 4);
   if (type === 'lost' || type === 'over') crowdReact('groan');
-  if (type === 'rush') crowdCheer(1);
+  if (type === 'rush') S.crowd = { at: S.time, big: 1, kind: 'cheer' }; // the fans up for the chant below
   if (type === 'win') crowdCheer(3);
   // Analytics only while the run is live: a quit run's ball may still roll out behind the name screen.
   const live = S.run && !S.run.over && !S.mpGame;
@@ -233,11 +235,16 @@ function wavePos() {
 const BURST_WINDOW = 0.45; // seconds
 const BURST_BREAKS = 3; // bricks broken inside the window that count as a burst
 const CROWD_GAP = 1.2; // seconds before the crowd can start another cheer
+// Where the latest brick broke (court x), so the crowd answers from that side.
+function lastPlace() {
+  const q = S.pops && S.pops[S.pops.length - 1];
+  return q && S.time - q.at < 1 ? { x: q.x } : null;
+}
 function crowdCheer(big) {
   if (S.crowd && S.crowd.kind === 'cheer' && S.time - S.crowd.at < CROWD_GAP && big <= S.crowd.big) return;
   S.crowd = { at: S.time, big, kind: 'cheer' };
   S.breaks = [];
-  audio.sfx('cheer', big);
+  audio.sfx('cheer', big, lastPlace());
   haptics.play('cheer', big * 0.5 + 0.5);
 }
 // Smaller reactions: a round of applause ('clap') or a groan ('groan').
@@ -245,7 +252,7 @@ function crowdCheer(big) {
 function crowdReact(kind) {
   if (S.crowd && S.time - S.crowd.at < CROWD_GAP && (S.crowd.kind === 'cheer' || S.crowd.kind === kind)) return;
   S.crowd = { at: S.time, big: 1, kind };
-  audio.sfx(kind);
+  audio.sfx(kind, 1, lastPlace());
 }
 const CROWD_LEN = 1.8; // seconds the fans keep jumping
 function crowdMood(kind) {

@@ -15,6 +15,14 @@ export const TRACKS = {
 };
 // The courts take turns through these, so the music changes every court.
 export const COURT_TRACKS = ['action1', 'stage1', 'action2', 'stage2', 'action3'];
+
+// The crowd: a real recording of an audience applauding (Mixkit, free licence;
+// assets/sfx/CREDITS.txt), 24.5 s: a loud burst at the start (0.6-3 s), steady
+// clapping in the middle (5-13 s), then dying away. Every crowd moment plays
+// a part of it; until it has loaded, the arcade voices stand in.
+export const CROWD_URL = 'assets/sfx/crowd-applause.m4a';
+const BURST = 0.6; // where the loud burst starts
+const STEADY = [5, 13]; // the steady stretch: the loop under play
 // A court's music builds from mellow to full power: the low-pass cutoff (Hz)
 // opens, the bass shelf (dB) comes up and the level rises a touch.
 // The crowd's notes: a major pentatonic, so any run of them sounds musical.
@@ -50,44 +58,80 @@ export class AudioSys {
     this.crowdOn = on;
   }
 
-  // The crowd's constant presence under play: a soft, filtered rumble of
-  // stepped noise (the stands talking) that swells with the excitement
-  // level k (0 quiet .. 1 roaring), with now and then a voice calling out.
-  // Silent off the court (k = 0).
+  // The applause recording, fetched and decoded once.
+  loadCrowd() {
+    if (this.crowdBuf || this.crowdLoading) return;
+    this.crowdLoading = true;
+    fetch(CROWD_URL)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('crowd ' + r.status))))
+      .then((data) => new Promise((ok, fail) => this.ac.decodeAudioData(data, ok, fail)))
+      .then((buf) => (this.crowdBuf = buf))
+      .catch(() => (this.crowdLoading = false)); // the arcade voices carry on; a later unlock tries again
+  }
+
+  // Play part of the applause: from offset for dur seconds at vol, faded in
+  // and out. o.pan (-1 left .. 1 right), o.sweep [from, to] pans across it,
+  // o.rate changes its speed a touch (no two rounds sound quite alike).
+  applause(offset, dur, vol, o = {}) {
+    if (!this.crowdBuf) return false;
+    const t = this.ac.currentTime + (o.delay || 0);
+    const src = this.ac.createBufferSource();
+    src.buffer = this.crowdBuf;
+    src.playbackRate.value = o.rate || 0.94 + Math.random() * 0.12;
+    const g = this.ac.createGain();
+    const fade = Math.min(0.5, dur * 0.35);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.08, dur * 0.2));
+    g.gain.setValueAtTime(vol, t + dur - fade);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(g);
+    let end = g;
+    if (this.ac.createStereoPanner && (o.pan || o.sweep)) {
+      const pan = this.ac.createStereoPanner();
+      if (o.sweep) {
+        pan.pan.setValueAtTime(o.sweep[0], t);
+        pan.pan.linearRampToValueAtTime(o.sweep[1], t + dur);
+      } else pan.pan.value = Math.max(-0.9, Math.min(0.9, o.pan));
+      g.connect(pan);
+      end = pan;
+    }
+    end.connect(this.sfxG);
+    src.start(t, offset, dur + 0.05);
+    return true;
+  }
+
+  // The crowd under play: the steady clapping, looped, as loud as the
+  // excitement k (0 calm .. 1 roaring): a whisper when the rally is calm,
+  // swelling with the combo, the Power Rush and every cheer. Silent off the
+  // court (k = 0).
   crowdBed(k) {
-    if (!this.ac || this.ac.state !== 'running') return;
+    if (!this.ac || this.ac.state !== 'running' || !this.crowdBuf) return;
     if (!this.bed) {
       const src = this.ac.createBufferSource();
-      src.buffer = this.chipNoise;
+      src.buffer = this.crowdBuf;
       src.loop = true;
-      const bp = this.ac.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 520;
-      bp.Q.value = 0.7;
+      src.loopStart = STEADY[0];
+      src.loopEnd = STEADY[1];
+      const lp = this.ac.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2400;
       const g = this.ac.createGain();
       g.gain.value = 0;
-      src.connect(bp);
-      bp.connect(g);
+      src.connect(lp);
+      lp.connect(g);
       g.connect(this.sfxG);
-      src.start();
-      this.bed = { g, bp, k: 0, call: 0 };
+      src.start(0, STEADY[0]);
+      this.bed = { g, lp, k: -1 };
     }
     const b = this.bed;
-    const want = k <= 0 ? 0 : 0.018 + 0.05 * Math.min(1, k);
-    if (Math.abs(want - b.k) > 0.002) {
+    const x = Math.max(0, Math.min(1, k));
+    const want = k <= 0 ? 0 : 0.04 + 0.42 * x * x;
+    if (Math.abs(want - b.k) > 0.004) {
       const t = this.ac.currentTime;
       b.g.gain.cancelScheduledValues(t);
-      b.g.gain.setTargetAtTime(want, t, 0.25);
-      b.bp.frequency.setTargetAtTime(480 + 420 * Math.min(1, k), t, 0.3);
+      b.g.gain.setTargetAtTime(want, t, k <= 0 ? 0.15 : 0.35);
+      b.lp.frequency.setTargetAtTime(1600 + 4400 * x, t, 0.35); // brighter as it gets louder
       b.k = want;
-    }
-    // A voice from the stands now and then, more often as it gets louder.
-    const now = this.ac.currentTime;
-    if (k > 0 && now > b.call) {
-      b.call = now + 1.6 + Math.random() * (4 - 2.4 * Math.min(1, k));
-      const f = PENTA[Math.floor(Math.random() * PENTA.length)] * (Math.random() < 0.5 ? 1 : 2);
-      this.tone(f, 0.06, 'square', 0.025 + 0.03 * Math.min(1, k));
-      if (Math.random() < 0.5) this.tone(f * 1.25, 0.07, 'square', 0.025, { delay: 0.07 });
     }
   }
 
@@ -177,6 +221,7 @@ export class AudioSys {
         if (i % 16 === 0) v = Math.random() > 0.5 ? 0.8 : -0.8;
         cd[i] = v;
       }
+      this.loadCrowd();
     }
     // 'suspended' is the normal locked state; iOS also uses 'interrupted' after a call or alarm.
     if (this.ac.state !== 'running' && !this.held) this.ac.resume().catch(() => {});
@@ -268,9 +313,11 @@ export class AudioSys {
     src.stop(t + dur + 0.02);
   }
 
-  sfx(name, arg) {
+  sfx(name, arg, info) {
     if (!this.ac || this.settings.muted || this.settings.sfx <= 0 || this.ac.state !== 'running') return;
     const T = (f, d, w, v, o) => this.tone(f, d, w, v, o);
+    // Where on the court it happened, for the crowd to come from that side.
+    const pan = info && info.x != null ? (info.x / 200) * 1.6 - 0.8 : 0;
     switch (name) {
       // Buttons, keys, tabs and toggles all click.
       case 'click':
@@ -342,15 +389,20 @@ export class AudioSys {
         }
         break;
       case 'clap':
-        // A round of 8-bit applause on a beat, and a little "yay".
+        // A round of applause from that side of the stands.
+        if (this.applause(STEADY[0] + Math.random() * 6, 1.4, 0.55, { pan })) break;
+        // (Until the recording has loaded: a round of 8-bit applause on a beat, and a little "yay".)
         for (let i = 0; i < 8; i++) this.chipClap(0.14 * (i % 2 ? 0.7 : 1), i * 0.075 + Math.random() * 0.012);
         T(784, 0.06, 'square', 0.06, { delay: 0.02 });
         T(1047, 0.09, 'square', 0.06, { delay: 0.09 });
         break;
       case 'cheer': {
-        // The roar: a quick rising arpeggio, a trill at the top, a "HEY!"
-        // chord stab and a burst of claps. Bigger moments climb higher.
+        // The roar: the burst of applause, longer and louder for bigger moments.
         const big = Math.min(arg || 1, 3);
+        if (this.applause(BURST, 1.4 + big * 1.1, 0.55 + big * 0.18, { pan: pan * 0.5 })) {
+          this.duck(0.9 + big * 0.5);
+          break;
+        }
         const notes = [523, 659, 784, 1047, 1319, 1568].slice(0, 3 + big);
         notes.forEach((f, i) => T(f, 0.07, 'square', 0.1, { delay: i * 0.055 }));
         const top = notes[notes.length - 1];
@@ -363,26 +415,33 @@ export class AudioSys {
         break;
       }
       case 'gasp':
-        // A save off the edge of the racket: a quick rising "ooooh!" and a few claps.
+        // A save off the edge of the racket: a quick rising "ooooh!", then a
+        // ripple of applause from that side.
         T(330, 0.22, 'triangle', 0.1, { to: 660 });
         T(494, 0.18, 'square', 0.04, { delay: 0.05, to: 988 });
-        for (let i = 0; i < 4; i++) this.chipClap(0.07, 0.25 + i * 0.07);
+        if (!this.applause(STEADY[0] + Math.random() * 6, 1.1, 0.45, { pan, delay: 0.2 })) {
+          for (let i = 0; i < 4; i++) this.chipClap(0.07, 0.25 + i * 0.07);
+        }
         break;
       case 'roar':
-        // Multiball: the stands erupt, a long rising sweep under a burst of claps.
-        T(220, 0.5, 'square', 0.06, { to: 880 });
-        T(330, 0.5, 'square', 0.045, { delay: 0.05, to: 1320 });
-        for (let i = 0; i < 14; i++) this.chipClap(0.09, 0.1 + i * 0.045 + Math.random() * 0.02);
-        this.duck(0.9);
+        // Multiball: the stands erupt, the burst a touch faster and brighter.
+        if (!this.applause(BURST, 2.6, 0.95, { rate: 1.08 })) {
+          T(220, 0.5, 'square', 0.06, { to: 880 });
+          for (let i = 0; i < 14; i++) this.chipClap(0.09, 0.1 + i * 0.045 + Math.random() * 0.02);
+        }
+        this.duck(1.2);
         break;
       case 'chant': {
         // Power Rush: "HEY! (clap clap) HEY! (clap clap)", on the beat.
         const beats = Math.max(2, Math.round(arg || 4));
         for (let i = 0; i < beats; i++) {
           const at = i * 0.6;
-          [392, 494, 587].forEach((f) => T(f, 0.12, 'square', 0.05, { delay: at }));
-          this.chipClap(0.12, at + 0.3);
-          this.chipClap(0.1, at + 0.45);
+          [392, 494, 587].forEach((f) => T(f, 0.12, 'square', 0.045, { delay: at }));
+          // Each HEY! answered by a short burst of real claps.
+          if (!this.applause(STEADY[0] + Math.random() * 6, 0.32, 0.6, { delay: at + 0.22, rate: 1.05 })) {
+            this.chipClap(0.12, at + 0.3);
+            this.chipClap(0.1, at + 0.45);
+          }
         }
         break;
       }
@@ -397,6 +456,8 @@ export class AudioSys {
         // The Mexican wave: a run of notes rising and falling with the crest
         // as it travels left to right round the stands.
         const len = arg || 3.6;
+        // The applause travels round the stands with the crest, left to right.
+        if (this.applause(STEADY[0] + Math.random() * 3, len, 0.6, { sweep: [-0.85, 0.85] })) break;
         const steps = Math.round(len / 0.12);
         const pan = this.ac.createStereoPanner ? this.ac.createStereoPanner() : null;
         if (pan) {
