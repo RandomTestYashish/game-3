@@ -2120,7 +2120,7 @@ def invite_and_boards(browser, url):
         state: {{ match: {{ id: 't', status: 'waiting', expires_at: Date.now() + 3500000 }}, me: {{ name: 'YASH', role: 'host', finished: false }}, opponent: null }} }}); __court.go('mpinvite')""")
     d.screen("mpinvite", 0.6)
     card = d.ev(f"(()=>{{ const c = {M}.invite && {M}.invite.canvas; return c ? [c.width, c.height, {M}.invite.file.name, {M}.invite.file.size] : null; }})()")
-    check("invite: the challenge image is made (1080 x 1350 PNG) and previewed", card and card[0] == 1080 and card[1] == 1350 and card[2] == "the-court-challenge.png" and card[3] > 5000, card)
+    check("invite: the challenge image is made (1080 x 1350 PNG), ready to share", card and card[0] == 1080 and card[1] == 1350 and card[2] == "the-court-challenge.png" and card[3] > 5000, card)
     # A phone (can share files): WhatsApp and Share both send the image with the message and link.
     d.ev("""window.__shared = []; navigator.canShare = (o) => !!(o && o.files); navigator.share = (o) => { window.__shared.push({ files: (o.files || []).map(f => f.name), text: o.text || '', url: o.url || '' }); return Promise.resolve(); }; 0""")
     d.click("mpwhatsapp")

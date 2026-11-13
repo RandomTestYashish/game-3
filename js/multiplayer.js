@@ -918,7 +918,7 @@ function heading(x, y, w, title, sub, emblem, t, size = 14) {
     sparkle(W / 2 + 18, y - 9, 2 - tw, '#f2b632');
   } else if (emblem) {
     rect(W / 2 - 18, y - 2, 36, 5, PAL.panel);
-    cardArt.rackets(W / 2 - 22, y - 13, 44, 26, t);
+    cardArt.rackets(W / 2 - 22, y - 19, 44, 26, t);
   }
   const ty = y + 11;
   serif(title, W / 2 + 1, ty, size, PAL.cream, { align: 'center', sp: 2, shadow: '#7a2420' });
@@ -1067,28 +1067,22 @@ export const MP_SCREENS = {
     box(k, h, 'dark', (x, y, w) => {
       heading(x, y, w, 'INVITE A FRIEND', null, 'rackets', s.time, 13);
       rect(W / 2 - 14, y + 32, 28, 1, PAL.cream);
-      // The challenge image, as it will be sent, beside the ways to send it.
-      const pw = 72;
-      const ph = 90;
-      rrect(x + 9, y + 39, pw + 2, ph + 2, 3, PAL.cream);
+      // The ways to send the challenge (the image goes with the link; made
+      // now, so a tap on SHARE sends it at once).
       try {
-        const smooth = ctx.imageSmoothingEnabled;
-        ctx.imageSmoothingEnabled = true; // a small, readable preview of the big image
-        ctx.drawImage(inviteCard().canvas, x + 10, y + 40, pw, ph);
-        ctx.imageSmoothingEnabled = smooth;
+        inviteCard();
       } catch {
-        rect(x + 10, y + 40, pw, ph, '#0d1f16');
+        /* no image: the link still goes */
       }
-      const rx = x + pw + 18;
-      const rw = x + w - 10 - rx;
-      text('YOUR CHALLENGE', rx + rw / 2, y + 41, PAL.yellow, { align: 'center', sp: 1 });
-      text('IMAGE + LINK', rx + rw / 2, y + 51, PAL.dim, { align: 'center' });
-      pill('mpshare', 'SHARE', rx + rw / 2, y + 63, rw, 18, () => shareInvite('native'), { sp: 2, icon: 'share' });
-      ghost('mpwhatsapp', 'WHATSAPP', rx + rw / 2, y + 89, rw, 15, () => shareInvite('whatsapp'), { sp: 1, icon: 'chat' });
-      ghost('mpcopy', 'COPY LINK', rx + rw / 2, y + 110, rw, 15, () => shareInvite('copy'), { sp: 1, icon: 'link' });
+      text('YOUR CHALLENGE', W / 2, y + 40, PAL.yellow, { align: 'center', sp: 1 });
+      text('IMAGE + LINK', W / 2, y + 51, PAL.dim, { align: 'center', sp: 1 });
+      const bw = w - 40;
+      pill('mpshare', 'SHARE', W / 2, y + 63, bw, 18, () => shareInvite('native'), { sp: 2, icon: 'share' });
+      ghost('mpwhatsapp', 'WHATSAPP', W / 2, y + 90, bw, 15, () => shareInvite('whatsapp'), { sp: 1, icon: 'chat' });
+      ghost('mpcopy', 'COPY LINK', W / 2, y + 111, bw, 15, () => shareInvite('copy'), { sp: 1, icon: 'link' });
       const url = M.inviteUrl.replace(/^https?:\/\//, '').toUpperCase();
       const short = url.length > 34 ? url.slice(0, 31) + '...' : url;
-      text(short, W / 2, y + 136, PAL.dim, { align: 'center' });
+      text(short, W / 2, y + 133, PAL.dim, { align: 'center' });
       const left = m ? m.expires_at - serverNow() : 0;
       const dots = '.'.repeat(1 + (Math.floor(s.time * 2) % 3));
       // The wait, in a dashed box with an hourglass whose sand runs.
@@ -1103,10 +1097,9 @@ export const MP_SCREENS = {
       icon('hourglass', x + 20, y + 152, Math.floor(s.time * 2) % 2 ? PAL.yellow : '#f2b632');
       text('WAITING FOR YOUR FRIEND' + dots, W / 2 + 8, y + 150, PAL.yellow, { align: 'center' });
       text('INVITE ENDS IN ' + mmss(left), W / 2 + 8, y + 160, PAL.dim, { align: 'center' });
-      pill('mprally', 'PLAY THE RALLY WHILE YOU WAIT', W / 2 + 6, y + 177, w - 36, 18, () => A.playSolo(), { sp: 0 });
-      cardArt.ball(x + 2, y + 177, 30, 18, s.time);
+      pill('mprally', 'PLAY THE RALLY WHILE YOU WAIT', W / 2, y + 177, w - 20, 18, () => A.playSolo(), { sp: 1 });
       text("WE'LL PAUSE IT WHEN THEY JOIN", W / 2, y + 199, PAL.dim, { align: 'center' });
-      ghost('mpcancel', 'CANCEL MATCH', W / 2 - 52, y + 216, 98, 15, () => leave('mp'), { sp: 0 });
+      ghost('mpcancel', 'CANCEL MATCH', W / 2 - 52, y + 216, 98, 15, () => leave('mp'), { sp: 1 });
       ghost('back', 'BACK', W / 2 + 52, y + 216, 98, 15, () => A.go('mp'), { icon: 'back' });
       drawNote(y + h + 6);
     });
