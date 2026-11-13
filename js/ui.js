@@ -63,11 +63,17 @@ export function card(id, title, sub, x, y, w, h, fn, o = {}) {
   const on = hot(id) || down(id);
   const face = gold ? (on ? PAL.yellowHi : PAL.yellow) : on ? PAL.panelHi : '#0d1f16';
   const lip = gold ? PAL.yellowLo : '#06120c';
-  rrect(x - 1, y - 1, w + 2, h + 4, 6, gold ? PAL.ink : on ? PAL.yellow : '#4f7a5c');
+  rrect(x - 1, y - 1, w + 2, h + 4, 6, gold ? PAL.ink : on ? PAL.yellow : PAL.cream);
   rrect(x, y + 2, w, h, 5, lip);
   rrect(x, y + d, w, h, 5, face);
   const fy = y + d;
-  rect(x + 6, fy + 1, w - 12, 1, gold ? '#fff8c8' : '#2f5a40');
+  // A thin inner border, two pixels in: the crisp double edge of the menus.
+  const line = gold ? '#fff8c8' : '#3f6b50';
+  rect(x + 5, fy + 2, w - 10, 1, line);
+  rect(x + 5, fy + h - 3, w - 10, 1, gold ? PAL.yellowLo : line);
+  rect(x + 2, fy + 5, 1, h - 10, line);
+  rect(x + w - 3, fy + 5, 1, h - 10, gold ? PAL.yellowLo : line);
+  for (const [cx, cy] of [[x + 3, fy + 3], [x + w - 4, fy + 3], [x + 3, fy + h - 4], [x + w - 4, fy + h - 4]]) rect(cx, cy, 1, 1, line);
   // Icon slot and divider.
   const slot = Math.round(Math.min(48, w * 0.24));
   if (o.art) o.art(x + 4, fy + 3, slot - 4, h - 6, o.t || 0);
@@ -84,7 +90,9 @@ export function card(id, title, sub, x, y, w, h, fn, o = {}) {
   const subOk = sub && h >= 32;
   const block = th + (subOk ? 9 : 0);
   const ty = fy + Math.round((h - block) / 2);
-  text(title, tx, ty, ink, { scale: ts, sp: tsp, shadow: gold ? null : PAL.ink });
+  // Title only (no subtitle): centred in the space after the divider.
+  const tcx = sub ? tx : Math.round(tx + (room - textW(title, ts, tsp)) / 2);
+  text(title, tcx, ty, ink, { scale: ts, sp: tsp, shadow: gold ? null : PAL.ink });
   if (subOk) {
     const [a, b] = sub.split('•').map((s) => s.trim());
     const sc = gold ? '#3b4a22' : '#a9bda8';
@@ -185,7 +193,38 @@ function inviteArt(x, y, w, h, t) {
   sparkle(x + 4, y + 4, 1 + (Math.floor(t * 2) % 2), PAL.ink);
 }
 
-export const cardArt = { court, rackets, cup: cupArt, list: listArt, invite: inviteArt };
+// Card art: a tennis ball speeding in, with motion lines (The Rally).
+function speedBall(x, y, w, h, t) {
+  const cx = x + w - 13;
+  const cy = y + Math.round(h / 2);
+  const zip = Math.round(Math.sin(t * 6) * 1);
+  for (const [dy, len] of [[-4, 7], [0, 11], [4, 7]]) rect(cx - 9 - len + zip, cy + dy, len, 1, PAL.ink);
+  disc(cx, cy, 8, PAL.ink);
+  disc(cx, cy, 7, '#d8f04a');
+  disc(cx - 2, cy - 2, 2, '#f4ffb0');
+  // The seam: two curves.
+  for (let i = -5; i <= 5; i++) {
+    rect(cx - 3 - Math.round(Math.cos((i / 5) * 1.3) * 2), cy + i, 1, 1, '#f4f1de');
+    rect(cx + 3 + Math.round(Math.cos((i / 5) * 1.3) * 2), cy + i, 1, 1, '#f4f1de');
+  }
+}
+
+export const cardArt = { court, rackets, ball: speedBall, cup: cupArt, list: listArt, invite: inviteArt };
+
+// A square menu tile: icon above its label (the landing's bottom row on phones).
+export function tile(id, label, iconName, cx, y, w, h, fn) {
+  const x = Math.round(cx - w / 2);
+  const on = hot(id) || down(id);
+  const d = down(id) ? 1 : 0;
+  rrect(x - 1, y + 1, w + 2, h + 2, 5, '#06120c');
+  rrect(x - 1, y - 1 + d, w + 2, h + 2, 5, on ? PAL.yellow : PAL.cream);
+  rrect(x, y + d, w, h, 4, down(id) ? PAL.panelHi : PAL.panel);
+  rect(x + 4, y + d + 2, w - 8, 1, '#2f5a40');
+  const ink = on ? PAL.yellow : PAL.cream;
+  icon(iconName, cx - 5, y + d + 4, ink);
+  text(label, cx, y + d + h - 10, ink, { align: 'center', sp: 1 });
+  region(id, x - 2, y - 2, w + 4, h + 4, fn);
+}
 
 // Quiet secondary button.
 export function ghost(id, label, cx, y, w, h, fn, o = {}) {

@@ -7,7 +7,7 @@ import { Game, TOOLS, START_LIVES, RUSH_AT } from './game.js';
 import { sections } from './rules.js';
 import { LEVELS } from './levels.js';
 import { drawGame, drawHUD, hudRows } from './render.js';
-import { ui, beginUI, region, hitTest, pill, ghost, card, cardArt, roundBtn, iconBtn, slider, panel } from './ui.js';
+import { ui, beginUI, region, hitTest, pill, ghost, card, tile, cardArt, roundBtn, iconBtn, slider, panel } from './ui.js';
 import { AudioSys, COURT_TRACKS, RUSH_TEMPO } from './audio.js';
 import { haptics } from './haptics.js';
 import { setupMultiplayer, openMultiplayer, bootMultiplayer, tickMultiplayer, drawOpponentHUD, onRunEnd, onCourtCleared, onPlayStarted, onPause, applyBroken, typing, typeChar, submitName, leaveMatch, openFriendsBoard, friendsOn, MP_SCREENS, MP_SCREEN_NAMES, mp } from './multiplayer.js';
@@ -1079,7 +1079,7 @@ const SCREENS = {
         }
       }
     };
-    drawTitle(PAL.cream, PAL.ink);
+    drawTitle(PAL.cream, '#7a2420'); // cream letters on a deep red shadow
     rect(W / 2 - 22, top + 58, 44, 1, PAL.cream);
     const sweep = (cyc - 1.5) / 1.2;
     if (sweep > 0 && sweep < 1) {
@@ -1111,15 +1111,20 @@ const SCREENS = {
     // short ones bring everything up over the brick pyramid.
     const L = titleLayout();
     const lift = Math.round((1 - k) * 8);
-    card('play', 'THE RALLY', 'PLAY SOLO • BEAT YOUR BEST', L.a.x, L.a.y + lift, L.cw, L.ch, play, { pulse: S.time, t: S.time, art: cardArt.court });
-    card('multiplayer', 'MULTIPLAYER', 'CHALLENGE YOUR FRIENDS', L.b.x, L.b.y + lift, L.cw, L.ch, openMultiplayer, { style: 'dark', t: S.time + 1.2, art: cardArt.rackets });
+    card('play', 'THE RALLY', null, L.a.x, L.a.y + lift, L.cw, L.ch, play, { t: S.time, art: cardArt.ball });
+    card('multiplayer', 'MULTIPLAYER', null, L.b.x, L.b.y + lift, L.cw, L.ch, openMultiplayer, { style: 'dark', t: S.time + 1.2, art: cardArt.rackets });
     const bw = L.bw;
-    ghost('courts', 'COURTS', L.row.x + bw / 2, L.row.y + lift, bw, 17, () => go('courts'), { sp: 1, icon: 'bricks' });
-    ghost('scores', 'SCORES', L.row.x + bw * 1.5 + 5, L.row.y + lift, bw, 17, () => {
+    const scores = () => {
       S.board = { rank: -1, fromRun: false };
       go('scores');
-    }, { sp: 1, icon: 'trophy' });
-    ghost('sound', 'SOUND', L.row.x + bw * 2.5 + 10, L.row.y + lift, bw, 17, openSound, { sp: 1, icon: 'sound' });
+    };
+    // Phones: square tiles (icon over label); wide screens: icon beside label.
+    const row = [['courts', 'COURTS', 'bricks', () => go('courts')], ['scores', 'SCORES', 'trophy', scores], ['sound', 'SOUND', 'sound', openSound]];
+    row.forEach(([id, label, ic, fn], i) => {
+      const cx = L.row.x + bw * (i + 0.5) + i * 5;
+      if (L.tiles) tile(id, label, ic, cx, L.row.y + lift, bw, L.rh, fn);
+      else ghost(id, label, cx, L.row.y + lift, bw, 17, fn, { sp: 1, icon: ic });
+    });
     drawSignature(k);
     ctx.globalAlpha = 1;
     S.primary = play;
@@ -1954,9 +1959,9 @@ function titleLayout() {
   const wide = W >= 400;
   const tall = H >= 440;
   const sig = sigBox();
-  const ch = tall ? 36 : wide ? 32 : 28;
-  const gap = tall ? 10 : 6;
-  const rowGap = tall ? 12 : 7;
+  const ch = tall ? 32 : wide ? 32 : 28;
+  const gap = tall ? 8 : 6;
+  const rowGap = tall ? 8 : 7;
   if (wide) {
     const cw = Math.min(206, Math.floor((W - 48) / 2));
     const x = Math.round((W - cw * 2 - 8) / 2);
@@ -1970,10 +1975,12 @@ function titleLayout() {
   const cw = Math.min(208, W - 24);
   const x = Math.round((W - cw) / 2);
   const bw = Math.floor((cw - 10) / 3);
-  const total = (ch + 4) * 2 + gap + rowGap + 19;
+  const tiles = tall; // room for icon-over-label tiles
+  const rh = tiles ? 28 : 17;
+  const total = (ch + 4) * 2 + gap + rowGap + rh + 2;
   const limit = sig.y - (tall ? 10 : 4) - total;
   const top = Math.max(P.wb + 4, Math.min(P.wb + 46 + Math.round(H * 0.04), limit));
-  return { cw, ch, bw, a: { x, y: top }, b: { x, y: top + ch + 4 + gap }, row: { x, y: top + (ch + 4) * 2 + gap + rowGap } };
+  return { cw, ch, bw, tiles, rh, a: { x, y: top }, b: { x, y: top + ch + 4 + gap }, row: { x, y: top + (ch + 4) * 2 + gap + rowGap } };
 }
 
 function drawSignature(k) {
