@@ -50,6 +50,47 @@ export class AudioSys {
     this.crowdOn = on;
   }
 
+  // The crowd's constant presence under play: a soft, filtered rumble of
+  // stepped noise (the stands talking) that swells with the excitement
+  // level k (0 quiet .. 1 roaring), with now and then a voice calling out.
+  // Silent off the court (k = 0).
+  crowdBed(k) {
+    if (!this.ac || this.ac.state !== 'running') return;
+    if (!this.bed) {
+      const src = this.ac.createBufferSource();
+      src.buffer = this.chipNoise;
+      src.loop = true;
+      const bp = this.ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 520;
+      bp.Q.value = 0.7;
+      const g = this.ac.createGain();
+      g.gain.value = 0;
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(this.sfxG);
+      src.start();
+      this.bed = { g, bp, k: 0, call: 0 };
+    }
+    const b = this.bed;
+    const want = k <= 0 ? 0 : 0.018 + 0.05 * Math.min(1, k);
+    if (Math.abs(want - b.k) > 0.002) {
+      const t = this.ac.currentTime;
+      b.g.gain.cancelScheduledValues(t);
+      b.g.gain.setTargetAtTime(want, t, 0.25);
+      b.bp.frequency.setTargetAtTime(480 + 420 * Math.min(1, k), t, 0.3);
+      b.k = want;
+    }
+    // A voice from the stands now and then, more often as it gets louder.
+    const now = this.ac.currentTime;
+    if (k > 0 && now > b.call) {
+      b.call = now + 1.6 + Math.random() * (4 - 2.4 * Math.min(1, k));
+      const f = PENTA[Math.floor(Math.random() * PENTA.length)] * (Math.random() < 0.5 ? 1 : 2);
+      this.tone(f, 0.06, 'square', 0.025 + 0.03 * Math.min(1, k));
+      if (Math.random() < 0.5) this.tone(f * 1.25, 0.07, 'square', 0.025, { delay: 0.07 });
+    }
+  }
+
   // A clap, 8-bit style: a tick of stepped noise.
   chipClap(vol, delay) {
     const t = this.ac.currentTime + delay;
@@ -319,6 +360,30 @@ export class AudioSys {
         [top / 2, (top / 2) * 1.26, (top / 2) * 1.5].forEach((f) => T(f, 0.16, 'square', 0.045, { delay: hey }));
         for (let i = 0; i < 6 + big * 4; i++) this.chipClap(0.08, hey + i * 0.06 + Math.random() * 0.02);
         this.duck(hey + 0.4);
+        break;
+      }
+      case 'gasp':
+        // A save off the edge of the racket: a quick rising "ooooh!" and a few claps.
+        T(330, 0.22, 'triangle', 0.1, { to: 660 });
+        T(494, 0.18, 'square', 0.04, { delay: 0.05, to: 988 });
+        for (let i = 0; i < 4; i++) this.chipClap(0.07, 0.25 + i * 0.07);
+        break;
+      case 'roar':
+        // Multiball: the stands erupt, a long rising sweep under a burst of claps.
+        T(220, 0.5, 'square', 0.06, { to: 880 });
+        T(330, 0.5, 'square', 0.045, { delay: 0.05, to: 1320 });
+        for (let i = 0; i < 14; i++) this.chipClap(0.09, 0.1 + i * 0.045 + Math.random() * 0.02);
+        this.duck(0.9);
+        break;
+      case 'chant': {
+        // Power Rush: "HEY! (clap clap) HEY! (clap clap)", on the beat.
+        const beats = Math.max(2, Math.round(arg || 4));
+        for (let i = 0; i < beats; i++) {
+          const at = i * 0.6;
+          [392, 494, 587].forEach((f) => T(f, 0.12, 'square', 0.05, { delay: at }));
+          this.chipClap(0.12, at + 0.3);
+          this.chipClap(0.1, at + 0.45);
+        }
         break;
       }
       case 'groan':

@@ -44,6 +44,8 @@ export const brickPoints = (type, n) => Math.round((BLOCKS[type].pts * comboMult
 export const TOOL_TIME = { smash: 7, freeze: 8, expand: 14, lowgrav: 10 };
 
 const WEIGHTS = { shield: 1, multiball: 1.2, smash: 0.9, freeze: 0.9, expand: 1.2, lowgrav: 0.9 };
+// Multiplayer: Multiball twice as likely, Low Gravity rare.
+export const MATCH_WEIGHTS = { shield: 1, multiball: 2.4, smash: 1, freeze: 0.9, expand: 1.1, lowgrav: 0.25 };
 
 export class Game {
   // opts carry a run across courts: { lives, score }
@@ -60,7 +62,8 @@ export class Game {
     this.lost = 0;
     this.padW = level.paddle ?? 54;
     this.dropRate = level.drop ?? 0.16;
-    this.firstTool = opts.firstTool || null; // guided first rally: a known tool, early
+    this.firstTool = opts.firstTool || null;
+    this.weights = opts.weights || null; // tool odds (multiplayer: MATCH_WEIGHTS) // guided first rally: a known tool, early
     this.combo = 0;
     this.bonus = 0;
     this.shield = false;
@@ -402,7 +405,7 @@ export class Game {
   weight(id) {
     if (id === 'shield' && this.shield) return 0;
     if (id === 'multiball' && this.balls.length >= MAX_BALLS) return 0;
-    return WEIGHTS[id];
+    return (this.weights || WEIGHTS)[id];
   }
 
   // A tool at random, weighted (see weight()).

@@ -47,7 +47,11 @@ export function pill(id, label, cx, y, w, h, fn, o = {}) {
   rrect(x, y + d, w, h, 6, hot(id) ? PAL.yellowHi : PAL.yellow);
   if (!d) rect(x + 5, y + 1, w - 10, 1, PAL.yellowHi);
   const sc = o.scale || 1;
-  text(label, cx, y + d + Math.round((h - 7 * sc) / 2), PAL.ink, { align: 'center', scale: sc, sp: o.sp ?? 2 });
+  if (o.icon) {
+    // Icon on the left, the label centred in the rest.
+    icon(o.icon, x + 6, y + d + Math.round((h - 11) / 2), PAL.ink);
+    text(label, cx + 8, y + d + Math.round((h - 7 * sc) / 2), PAL.ink, { align: 'center', scale: sc, sp: o.sp ?? 2 });
+  } else text(label, cx, y + d + Math.round((h - 7 * sc) / 2), PAL.ink, { align: 'center', scale: sc, sp: o.sp ?? 2 });
   region(id, x - 2, y - 2, w + 4, h + 6, fn);
 }
 

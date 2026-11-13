@@ -11,7 +11,7 @@
 //   order, own pace) -> when both are out (or a player is gone for 30 s) the
 //   server declares the result -> rematch / share / friends board / history.
 
-import { W, H, ctx, PAL, rect, rrect, disc, text, textW, serif, wrap, icon, sparkle, clamp, cup, laurel, rays, METAL } from './gfx.js';
+import { W, H, ctx, PAL, rect, rrect, disc, text, textW, serif, serifW, wrap, icon, sparkle, clamp, cup, laurel, rays, METAL } from './gfx.js';
 import { ui, region, pill, ghost, card, cardArt, panel, iconBtn } from './ui.js';
 import { mpEnabled, connect, call, watch, serverNow } from './mpnet.js';
 import { drawInviteCard, drawResultStory, toBlob } from './mpcards.js';
@@ -876,57 +876,83 @@ function boardBack() {
   A.go(to);
 }
 
-// The result screen's picture, in a 42-pixel band at the top (cy = top):
-// won: a gold cup popping up over turning rays, laurels and falling
-// confetti; lost: a rain cloud over a drooping racket; draw: two silver cups.
-function resultArt(r, cx, top, w, t, time) {
-  const pop = clamp(t / 0.45, 0, 1);
-  const bounce = pop < 1 ? Math.round(Math.sin(pop * Math.PI) * -6 + (1 - pop) * 12) : 0;
+// The result screen's crest, breaking the panel's top border: won, the gold
+// cup popping in with confetti raining over the top of the panel; lost, a
+// small rain cloud; draw, two silver cups nodding in turn.
+function resultCrest(r, x, y, w, time) {
   if (r === 'won') {
-    rays(cx, top + 22, 8, 30 + Math.round(Math.sin(time * 2) * 2), time, '#f2b632');
-    laurel(cx, top + 15, 27, -1, 6);
-    laurel(cx, top + 15, 27, 1, 6);
-    if (pop > 0) cup(cx, top + 6 + bounce, 2, METAL.gold);
-    // Confetti: falling, wrapping round the band.
-    const colours = ['#f2b632', '#e0503a', '#3f9a4f', '#2d4f9a', '#ff6fa8'];
-    for (let i = 0; i < 22; i++) {
-      const px = cx - w / 2 + 8 + ((i * 47) % (w - 16));
-      const py = top + ((time * (14 + (i % 5) * 4) + i * 11) % 44);
-      const sway = Math.round(Math.sin(time * 3 + i) * 2);
-      rect(px + sway, py, i % 3 ? 2 : 1, 2, colours[i % colours.length]);
+    rect(W / 2 - 28, y - 2, 56, 5, PAL.panel);
+    cup(W / 2, y - 27 + Math.round(Math.sin(time * 3)), 2, METAL.gold);
+    const colours = ['#f2b632', '#e0503a', '#3f9a4f', '#5b8fd8', '#ff6fa8'];
+    for (let i = 0; i < 18; i++) {
+      const px = x + 10 + ((i * 47) % (w - 20));
+      const py = y - 10 + ((time * (12 + (i % 5) * 4) + i * 11) % 48);
+      rect(px + Math.round(Math.sin(time * 3 + i) * 2), py, i % 3 ? 2 : 1, 2, colours[i % colours.length]);
     }
-    sparkle(cx - 34, top + 8, 1 + (Math.floor(time * 3) % 2), '#f2b632');
-    sparkle(cx + 34, top + 14, 2 - (Math.floor(time * 3) % 2), '#f2b632');
+    const tw = Math.floor(time * 3) % 2;
+    sparkle(W / 2 - 32, y - 10, 1 + tw, '#f2b632');
+    sparkle(W / 2 + 32, y - 16, 2 - tw, '#f2b632');
   } else if (r === 'lost') {
-    // A racket, head down, and a cloud raining on it.
-    const rx = cx + 6;
-    const ry = top + 30 + Math.max(0, bounce);
-    for (let i = 0; i < 9; i++) rect(rx - 10 + i, ry - 12 + i, 2, 2, i > 5 ? '#8a5a2b' : '#c98a4e');
-    disc(rx + 2, ry, 7, PAL.ink);
-    disc(rx + 2, ry, 6, '#cbbd92');
-    disc(rx + 2, ry, 5, '#a8323a');
-    for (let d = -3; d <= 3; d += 2) {
-      rect(rx + 2 + d, ry - 4, 1, 9, '#f4f1de');
-      rect(rx - 2, ry + d, 9, 1, '#f4f1de');
-    }
-    const cyy = top + 4 + Math.round(Math.sin(time * 1.5));
-    for (const [dx, rr] of [[-10, 6], [-2, 8], [8, 6], [14, 4]]) disc(cx + dx, cyy + 8, rr, '#6b7280');
-    for (const [dx, rr] of [[-10, 5], [-2, 7], [8, 5], [14, 3]]) disc(cx + dx, cyy + 7, rr, '#9aa3ad');
-    for (let i = 0; i < 7; i++) {
-      const dy = (time * 30 + i * 7) % 16;
-      rect(cx - 12 + i * 4, cyy + 16 + dy, 1, 3, '#5b8fd8');
-    }
+    rect(W / 2 - 18, y - 2, 36, 5, PAL.panel);
+    const cy = y - 8 + Math.round(Math.sin(time * 1.5));
+    for (const [dx, rr] of [[-9, 5], [-2, 7], [7, 5], [12, 3]]) disc(W / 2 + dx, cy + 2, rr, '#6b7280');
+    for (const [dx, rr] of [[-9, 4], [-2, 6], [7, 4], [12, 2]]) disc(W / 2 + dx, cy + 1, rr, '#9aa3ad');
+    for (let i = 0; i < 6; i++) rect(W / 2 - 10 + i * 4, cy + 8 + ((time * 26 + i * 7) % 12), 1, 3, '#5b8fd8');
   } else {
-    // Two silver cups side by side, nodding in turn.
-    const nod = (i) => Math.round(Math.sin(time * 3 + i * Math.PI) * 1);
-    if (pop > 0) {
-      cup(cx - 22, top + 12 + bounce + nod(0), 1, METAL.silver);
-      cup(cx + 22, top + 12 + bounce + nod(1), 1, METAL.silver);
-    }
-    rrect(cx - 7, top + 18, 14, 11, 4, PAL.ink);
-    text('=', cx, top + 20, PAL.yellow, { align: 'center' });
-    sparkle(cx, top + 6, 1 + (Math.floor(time * 3) % 2), '#8c98a4');
+    rect(W / 2 - 24, y - 2, 48, 5, PAL.panel);
+    const nod = (i) => Math.round(Math.sin(time * 3 + i * Math.PI));
+    cup(W / 2 - 12, y - 11 + nod(0), 1, METAL.silver);
+    cup(W / 2 + 12, y - 11 + nod(1), 1, METAL.silver);
   }
+}
+
+// A panel's heading, as in the reference screens: an emblem breaking the
+// top border (crossed rackets, or the cup), the title in serif on a deep red
+// shadow between two laurel sprigs, and a subtitle between two rules.
+function heading(x, y, w, title, sub, emblem, t, size = 14) {
+  if (emblem === 'cup') {
+    rect(W / 2 - 16, y - 2, 32, 5, PAL.panel); // a gap in the border for it
+    cup(W / 2, y - 12, 1, METAL.gold);
+    const tw = Math.floor(t * 3) % 2;
+    sparkle(W / 2 - 18, y - 6, 1 + tw, '#f2b632');
+    sparkle(W / 2 + 18, y - 9, 2 - tw, '#f2b632');
+  } else if (emblem) {
+    rect(W / 2 - 18, y - 2, 36, 5, PAL.panel);
+    cardArt.rackets(W / 2 - 22, y - 13, 44, 26, t);
+  }
+  const ty = y + 11;
+  serif(title, W / 2 + 1, ty, size, PAL.cream, { align: 'center', sp: 2, shadow: '#7a2420' });
+  const tw2 = Math.round(serifW(title, size, 2) / 2) + 5;
+  sprig(W / 2 - tw2 - 2, ty + 9, -1);
+  sprig(W / 2 + tw2 + 2, ty + 9, 1);
+  if (sub) {
+    const sw = textW(sub, 1, 1);
+    text(sub, W / 2, ty + size + 8, PAL.cream, { align: 'center', sp: 1 });
+    rect(W / 2 - sw / 2 - 12, ty + size + 11, 8, 1, PAL.creamLo);
+    rect(W / 2 + sw / 2 + 4, ty + size + 11, 8, 1, PAL.creamLo);
+  }
+}
+
+// A small laurel sprig leaning out (side -1 left, 1 right).
+function sprig(cx, cy, side) {
+  for (let i = 0; i < 5; i++) {
+    const lx = cx + side * (i - 1);
+    const ly = cy - i * 2;
+    rect(lx, ly, 1, 2, '#1f5e47');
+    rect(lx + side * 1, ly - 1, 2, 1, '#3f9a4f');
+    rect(lx - side * 2, ly, 2, 1, '#5cc597');
+  }
+}
+
+// A chip with an icon: the rules at a glance.
+function chip(cx, y, label, ic, ink) {
+  const cw = textW(label) + 22;
+  const x = Math.round(cx - cw / 2);
+  rrect(x, y, cw, 13, 5, PAL.cream);
+  rrect(x + 1, y + 1, cw - 2, 11, 4, '#0d1f16');
+  icon(ic, x + 4, y + 1, ic === 'heart' ? '#e0503a' : ic === 'crown' ? '#f2b632' : PAL.cream);
+  text(label, x + 17, y + 3, ink || PAL.cream);
+  return cw;
 }
 
 // The two players' colours: your racket is strung blue, your friend's red.
@@ -981,24 +1007,19 @@ export const MP_SCREENS = {
     const cards = on ? (open ? 4 : 3) : 0;
     const h = on ? 74 + cards * 41 + 26 : 140;
     box(k, h, 'dark', (x, y, w) => {
-      // Header: the crossed rackets over the title, as on the landing card.
-      cardArt.rackets(W / 2 - 22, y + 4, 44, 26, s.time);
-      serif('MULTIPLAYER', W / 2 + 2, y + 28, 14, PAL.cream, { align: 'center', sp: 2, shadow: PAL.ink });
-      text('CHALLENGE YOUR FRIENDS', W / 2, y + 46, PAL.dim, { align: 'center', sp: 1 });
+      heading(x, y, w, 'MULTIPLAYER', 'CHALLENGE YOUR FRIENDS', 'rackets', s.time);
       if (!on) {
         wrapped(say('not_configured'), W / 2, y + 62, PAL.dim, w - 24);
         ghost('back', 'BACK', W / 2, y + h - 24, 104, 15, () => A.go('title'), { icon: 'back' });
         return;
       }
       // The rules at a glance.
-      const chips = ['3 LIVES', '30 MIN', 'TOP SCORE WINS'];
-      const cw = chips.map((c) => textW(c) + 10);
-      let cx = Math.round(W / 2 - (cw.reduce((a, b) => a + b, 0) + 8) / 2);
-      chips.forEach((c, i) => {
-        rrect(cx, y + 57, cw[i], 12, 4, '#2f5a40');
-        rrect(cx + 1, y + 58, cw[i] - 2, 10, 3, '#0d1f16');
-        text(c, cx + 5, y + 60, i === 2 ? PAL.yellow : PAL.cream);
-        cx += cw[i] + 4;
+      const chips = [['3 LIVES', 'heart'], ['30 MIN', 'clock'], ['TOP SCORE', 'crown']];
+      const widths = chips.map(([c]) => textW(c) + 22);
+      let cx = Math.round(W / 2 - (widths.reduce((a, b) => a + b, 0) + 8) / 2);
+      chips.forEach(([c, ic], i) => {
+        chip(cx + widths[i] / 2, y + 56, c, ic, i === 2 ? PAL.yellow : PAL.cream);
+        cx += widths[i] + 4;
       });
       const cw2 = w - 20;
       let cy = y + 76;
@@ -1044,8 +1065,8 @@ export const MP_SCREENS = {
     const m = match();
     const h = 244;
     box(k, h, 'dark', (x, y, w) => {
-      serif('INVITE A FRIEND', W / 2 + 2, y + 13, 16, PAL.cream, { align: 'center', sp: 1, shadow: PAL.ink });
-      rect(W / 2 - 12, y + 32, 24, 1, PAL.cream);
+      heading(x, y, w, 'INVITE A FRIEND', null, 'rackets', s.time, 13);
+      rect(W / 2 - 14, y + 32, 28, 1, PAL.cream);
       // The challenge image, as it will be sent, beside the ways to send it.
       const pw = 72;
       const ph = 90;
@@ -1062,17 +1083,28 @@ export const MP_SCREENS = {
       const rw = x + w - 10 - rx;
       text('YOUR CHALLENGE', rx + rw / 2, y + 41, PAL.yellow, { align: 'center', sp: 1 });
       text('IMAGE + LINK', rx + rw / 2, y + 51, PAL.dim, { align: 'center' });
-      pill('mpshare', 'SHARE', rx + rw / 2, y + 63, rw, 18, () => shareInvite('native'), { sp: 2 });
-      ghost('mpwhatsapp', 'WHATSAPP', rx + rw / 2, y + 89, rw, 15, () => shareInvite('whatsapp'), { sp: 1 });
-      ghost('mpcopy', 'COPY LINK', rx + rw / 2, y + 110, rw, 15, () => shareInvite('copy'), { sp: 1 });
+      pill('mpshare', 'SHARE', rx + rw / 2, y + 63, rw, 18, () => shareInvite('native'), { sp: 2, icon: 'share' });
+      ghost('mpwhatsapp', 'WHATSAPP', rx + rw / 2, y + 89, rw, 15, () => shareInvite('whatsapp'), { sp: 1, icon: 'chat' });
+      ghost('mpcopy', 'COPY LINK', rx + rw / 2, y + 110, rw, 15, () => shareInvite('copy'), { sp: 1, icon: 'link' });
       const url = M.inviteUrl.replace(/^https?:\/\//, '').toUpperCase();
       const short = url.length > 34 ? url.slice(0, 31) + '...' : url;
       text(short, W / 2, y + 136, PAL.dim, { align: 'center' });
       const left = m ? m.expires_at - serverNow() : 0;
       const dots = '.'.repeat(1 + (Math.floor(s.time * 2) % 3));
-      text('WAITING FOR YOUR FRIEND' + dots, W / 2, y + 150, PAL.yellow, { align: 'center' });
-      text('INVITE ENDS IN ' + mmss(left), W / 2, y + 161, PAL.dim, { align: 'center' });
-      pill('mprally', 'PLAY THE RALLY WHILE YOU WAIT', W / 2, y + 176, w - 24, 18, () => A.playSolo(), { sp: 1 });
+      // The wait, in a dashed box with an hourglass whose sand runs.
+      for (let dx = x + 12; dx < x + w - 14; dx += 6) {
+        rect(dx, y + 145, 3, 1, '#4f7a5c');
+        rect(dx, y + 170, 3, 1, '#4f7a5c');
+      }
+      for (let dy = y + 147; dy < y + 169; dy += 6) {
+        rect(x + 10, dy, 1, 3, '#4f7a5c');
+        rect(x + w - 11, dy, 1, 3, '#4f7a5c');
+      }
+      icon('hourglass', x + 20, y + 152, Math.floor(s.time * 2) % 2 ? PAL.yellow : '#f2b632');
+      text('WAITING FOR YOUR FRIEND' + dots, W / 2 + 8, y + 150, PAL.yellow, { align: 'center' });
+      text('INVITE ENDS IN ' + mmss(left), W / 2 + 8, y + 160, PAL.dim, { align: 'center' });
+      pill('mprally', 'PLAY THE RALLY WHILE YOU WAIT', W / 2 + 6, y + 177, w - 36, 18, () => A.playSolo(), { sp: 0 });
+      cardArt.ball(x + 2, y + 177, 30, 18, s.time);
       text("WE'LL PAUSE IT WHEN THEY JOIN", W / 2, y + 199, PAL.dim, { align: 'center' });
       ghost('mpcancel', 'CANCEL MATCH', W / 2 - 52, y + 216, 98, 15, () => leave('mp'), { sp: 0 });
       ghost('back', 'BACK', W / 2 + 52, y + 216, 98, 15, () => A.go('mp'), { icon: 'back' });
@@ -1204,46 +1236,51 @@ export const MP_SCREENS = {
     if (!a || !b || !m) return;
     const r = resultKind();
     const head = r === 'draw' ? "IT'S A DRAW!" : r === 'won' ? 'YOU WIN!' : 'YOU LOST';
-    const h = M.stash ? 270 : 248;
-    const t = s.t; // time on this screen: the illustration pops in, the scores count up
-    box(k, h, 'cream', (x, y, w) => {
-      resultArt(r, W / 2, y + 4, w, t, s.time);
-      const hs = textW(head, 2, 1) <= w - 20 ? 2 : 1;
-      text(head, W / 2, y + 50, r === 'lost' ? '#b3541e' : r === 'won' ? '#3f7d38' : PAL.ink, { align: 'center', scale: hs, sp: 2, shadow: PAL.creamLo });
-      // The two scores, counting up from 0, the winner's with a star.
-      const up = clamp(t / 1.1, 0, 1);
-      const ease = 1 - Math.pow(1 - up, 3);
+    const h = M.stash ? 236 : 214;
+    const t = s.t; // time on this screen: the scores count up
+    box(k, h, 'dark', (x, y, w) => {
+      resultCrest(r, x, y, w, s.time);
+      heading(x, y, w, head, null, null, s.time, 16);
+      // The scoreboard: you and your friend, a crown over the winner, VS between.
+      const by = y + 40;
+      rrect(x + 12, by, w - 24, 48, 6, PAL.cream);
+      rrect(x + 13, by + 1, w - 26, 46, 5, '#0d1f16');
+      rect(W / 2, by + 6, 1, 36, PAL.creamLo);
+      rrect(W / 2 - 9, by + 18, 18, 12, 4, PAL.cream);
+      rrect(W / 2 - 8, by + 19, 16, 10, 3, PAL.ink);
+      text('VS', W / 2, by + 21, PAL.cream, { align: 'center' });
+      const ease = 1 - Math.pow(1 - clamp(t / 1.1, 0, 1), 3);
       const col = (p, cx, won) => {
-        if (won) {
-          const bob = Math.round(Math.sin(s.time * 4) * 1);
-          icon('star', cx - 5, y + 66 + bob, '#f2b632');
-        }
-        text(p.name, cx, y + 78, won ? '#b3541e' : PAL.ink, { align: 'center', sp: 1 });
-        const score = Math.round((p.final_score ?? p.score) * ease);
-        const sc = textW(String(score), 2, 1) <= w / 2 - 12 ? 2 : 1;
-        text(String(score), cx, y + 90, won ? '#3f7d38' : PAL.ink, { align: 'center', scale: sc, sp: 1 });
-        text('COURT ' + p.court, cx, y + 107, '#7d7354', { align: 'center' });
+        if (won) icon('crown', cx - 5 - textW(p.name) / 2 - 2, by - 6 + Math.round(Math.sin(s.time * 4)), '#f2b632');
+        text(p.name, cx, by + 6, won ? PAL.yellow : PAL.cream, { align: 'center', sp: 1 });
+        const score = String(Math.round((p.final_score ?? p.score) * ease));
+        const sc = textW(score, 2, 1) <= w / 2 - 26 ? 2 : 1;
+        text(score, cx, by + 17, won ? PAL.yellow : PAL.white, { align: 'center', scale: sc, sp: 1, shadow: PAL.ink });
+        text('COURT ' + p.court, cx, by + 36, PAL.dim, { align: 'center' });
       };
-      col(a, W / 2 - w / 4, r === 'won');
-      col(b, W / 2 + w / 4, r === 'lost');
-      rect(W / 2, y + 74, 1, 40, PAL.creamLo);
-      text('VERIFIED RESULT', W / 2, y + 120, '#3f7d38', { align: 'center', sp: 1 });
+      col(a, W / 2 - (w - 24) / 4, r === 'won');
+      col(b, W / 2 + (w - 24) / 4, r === 'lost');
+      // Verified by the server.
+      const vw = textW('VERIFIED RESULT', 1, 1) + 15;
+      icon('check', W / 2 - vw / 2, by + 52, '#5fd35f');
+      text('VERIFIED RESULT', W / 2 - vw / 2 + 15, by + 54, '#5fd35f', { sp: 1 });
       const rm = b.declined ? 'DECLINED' : M.rematchAsked || a.rematch ? 'ASKED' : '';
-      if (b.rematch && !a.rematch && !b.declined) text(b.name + ' WANTS A REMATCH!', W / 2, y + 131, '#b3541e', { align: 'center' });
-      pill('mprematch', rm === 'ASKED' ? 'WAITING FOR ' + b.name : rm === 'DECLINED' ? 'NO REMATCH' : 'REMATCH', W / 2, y + 143, 150, 19, rematch, { sp: 1, pulse: rm ? null : s.time });
-      ghost('mpsharer', 'SHARE RESULT', W / 2, y + 173, 150, 15, shareResult);
-      ghost('mpboard', 'FRIENDS BOARD', W / 2, y + 194, 150, 15, () => {
+      if (b.rematch && !a.rematch && !b.declined) text(b.name + ' WANTS A REMATCH!', W / 2, by + 66, PAL.yellow, { align: 'center' });
+      const bw = w - 40;
+      pill('mprematch', rm === 'ASKED' ? 'WAITING FOR ' + b.name : rm === 'DECLINED' ? 'NO REMATCH' : 'REMATCH', W / 2, by + 77, bw, 19, rematch, { sp: 1, icon: rm ? null : 'refresh' });
+      ghost('mpsharer', 'SHARE RESULT', W / 2, by + 104, bw, 15, shareResult, { icon: 'share' });
+      ghost('mpboard', 'FRIENDS BOARD', W / 2, by + 124, bw, 15, () => {
         loadBoard();
         A.go('mpboard');
-      });
+      }, { icon: 'people' });
       const home = () => {
         call('mp_decline', { p_match: M.matchId });
         endLocal();
         A.go('title');
       };
-      ghost('home', 'HOME', W / 2, y + 215, 150, 15, home);
+      ghost('home', 'HOME', W / 2, by + 144, bw, 15, home, { icon: 'home' });
       if (M.stash) {
-        ghost('mpsolo', 'BACK TO YOUR RALLY', W / 2, y + 237, 150, 15, () => {
+        ghost('mpsolo', 'BACK TO YOUR RALLY', W / 2, by + 166, bw, 15, () => {
           call('mp_decline', { p_match: M.matchId });
           endLocal();
           restoreSolo();

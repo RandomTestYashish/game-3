@@ -10,8 +10,8 @@
 // the other functions, as the browser would call them.
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { brickPoints, BLOCKS, Game, MAX_BALLS } from '../js/game.js';
-import { LEVELS } from '../js/levels.js';
+import { brickPoints, BLOCKS, Game, MAX_BALLS, MATCH_WEIGHTS } from '../js/game.js';
+import { LEVELS, matchLevel } from '../js/levels.js';
 import { courtBricks, courtsSql } from '../scripts/mp_courts.mjs';
 
 const dir = process.env.PGLITE;
@@ -497,10 +497,10 @@ function simulate(k, mode, seed, every, score) {
   let next = every;
   let topCombo = 0;
   const snaps = [];
-  const g = new Game(LEVELS[k - 1], () => {}, (() => {
+  const g = new Game(matchLevel(k - 1), () => {}, (() => {
     let s = seed >>> 0;
     return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
-  })(), { score });
+  })(), { score, weights: MATCH_WEIGHTS });
   const bits = () => {
     const bytes = new Uint8Array(Math.ceil(g.blocks.length / 8));
     g.blocks.forEach((b, i) => !b.alive && (bytes[i >> 3] |= 1 << (i & 7)));

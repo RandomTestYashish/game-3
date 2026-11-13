@@ -3,9 +3,9 @@
 import { W, H, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, rect, rrect, disc, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
 import { P, setCam, buildLayers, drawScene, setTheme, currentTheme, drawThemePreview, proj, unprojX, drawBlock, drawBall, drawShadow } from './scene.js';
 import { COUNTRIES, getCourtTheme } from './themes.js';
-import { Game, TOOLS, START_LIVES, RUSH_AT } from './game.js';
+import { Game, TOOLS, START_LIVES, RUSH_AT, MATCH_WEIGHTS } from './game.js';
 import { sections } from './rules.js';
-import { LEVELS } from './levels.js';
+import { LEVELS, matchLevel } from './levels.js';
 import { drawGame, drawHUD, hudRows } from './render.js';
 import { ui, beginUI, region, hitTest, pill, ghost, card, tile, cardArt, roundBtn, iconBtn, slider, panel } from './ui.js';
 import { AudioSys, COURT_TRACKS, RUSH_TEMPO } from './audio.js';
@@ -152,7 +152,11 @@ function onGameEvent(type, arg, info) {
     else if (S.breaks.length >= BURST_BREAKS) crowdCheer(S.breaks.length >= 5 ? 2 : 1);
     else if (arg === 3) crowdReact('clap'); // a nice little run
   }
-  if (type === 'power') crowdReact('clap'); // a tool caught
+  if (type === 'power' && arg === 'multiball') crowdCheer(2); // the stands erupt
+  else if (type === 'power') crowdReact('clap'); // a tool caught
+  if (type === 'power' && arg === 'multiball') audio.sfx('roar');
+  if (type === 'paddle' && Math.abs(arg || 0) > 0.8) crowdReact('gasp'); // saved off the edge
+  if (type === 'rush') audio.sfx('chant', 4);
   if (type === 'lost' || type === 'over') crowdReact('groan');
   if (type === 'rush') crowdCheer(1);
   if (type === 'win') crowdCheer(3);
@@ -331,7 +335,9 @@ function startLevel(i, level, extra) {
   S.cleared = null;
   if (onlineEnabled() && !S.mpGame) loadOnline(); // fresh rows for the live place (reused for 30 s)
   S.level = clamp(i, 0, LEVELS.length - 1);
-  S.game = new Game(level || LEVELS[S.level], onGameEvent, Math.random, { lives: S.run.lives, score: S.run.score, ...extra });
+  const lv = level || (S.mpGame ? matchLevel(S.level) : LEVELS[S.level]);
+  const odds = S.mpGame ? { weights: MATCH_WEIGHTS } : {};
+  S.game = new Game(lv, onGameEvent, Math.random, { lives: S.run.lives, score: S.run.score, ...odds, ...extra });
   S.ending = 0;
   if (S.screen === 'countdown') enter('countdown');
   else go('countdown');
@@ -2037,6 +2043,11 @@ function draw() {
   setCam(S.cam + S.pitch, S.shift);
   P.banner = GAME_SCREENS.has(S.screen); // the banner board shows on the courts, the stone wall elsewhere
   P.hype = crowdHype();
+  // The crowd under play: a murmur that rises with the combo, the Power Rush
+  // and every cheer; quiet off the court.
+  const g1 = S.game;
+  const live = g1 && S.screen === 'play' && (g1.state === 'play' || g1.state === 'serve');
+  audio.crowdBed(live ? Math.min(1, 0.15 + (g1.combo || 0) / 12 + (g1.rush ? 0.35 : 0) + P.hype * 0.5) : 0);
   P.clap = crowdMood('clap');
   P.groan = crowdMood('groan');
   P.pops = GAME_SCREENS.has(S.screen) ? (S.pops || []).filter((q) => S.time - q.at < POP_LEN).map((q) => ({ x: q.x, y: q.y, k: q.k * (1 - (S.time - q.at) / POP_LEN) })) : [];
@@ -2314,12 +2325,12 @@ function startMatchGame(levelIndex, { lives, score }, broken, wait) {
   S.run = { lives, score, saved: true, cleared: 0, mp: true }; // saved: never offered to the solo board
   S.cleared = null;
   S.level = clamp(levelIndex, 0, LEVELS.length - 1);
-  S.game = new Game(LEVELS[S.level], onGameEvent, Math.random, { lives, score });
+  S.game = new Game(matchLevel(S.level), onGameEvent, Math.random, { lives, score, weights: MATCH_WEIGHTS });
   applyBroken(S.game, broken);
   // Rejoining on a court already cleared (its bonus already counted): play on from the next one.
   if (S.game.remaining === 0 && S.level + 1 < LEVELS.length) {
     S.level++;
-    S.game = new Game(LEVELS[S.level], onGameEvent, Math.random, { lives, score });
+    S.game = new Game(matchLevel(S.level), onGameEvent, Math.random, { lives, score, weights: MATCH_WEIGHTS });
   }
   S.ending = 0;
   S.countFrom = Math.max(BEAT, wait || 0);

@@ -123,3 +123,12 @@ for (let n = 0; n < COUNT; n++) {
   lv.drift = Math.max(0, Math.min(lv.drift || 0, Math.floor(PADDLE_Y - ROOM - bottom)));
   LEVELS.push(lv);
 }
+
+// Multiplayer plays the same courts a little livelier: courts 1-10 serve
+// faster (30% on court 1, easing to 10% by court 10) and tools drop a
+// little more often. The Rally is unchanged.
+export function matchLevel(i) {
+  const lv = LEVELS[i];
+  const boost = i < 10 ? 1.3 - (0.2 * i) / 9 : 1;
+  return { ...lv, speed: Math.round(lv.speed * boost), drop: Math.min(0.24, lv.drop * 1.25) };
+}

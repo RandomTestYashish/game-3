@@ -16,7 +16,7 @@
 
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { LEVELS } from '../js/levels.js';
+import { LEVELS, matchLevel } from '../js/levels.js';
 import { Game, MAX_BALLS } from '../js/game.js';
 
 const GAP = 1.2 + 2.25; // js/main.js: the win flourish (S.ending) and the countdown (3 beats)
@@ -33,7 +33,8 @@ function seeded(seed) {
 // Seconds for the bot to clear court i (Infinity if it cannot within 90 s).
 export function botClear(i, seed, onBreak = () => {}) {
   let t = 0;
-  const g = new Game(LEVELS[i], (e, ...a) => e === 'break' && onBreak(t, g, ...a), seeded(seed));
+  // The courts as multiplayer plays them (js/levels.js matchLevel: livelier courts 1-10).
+  const g = new Game(matchLevel(i), (e, ...a) => e === 'break' && onBreak(t, g, ...a), seeded(seed));
   while (t < 90 && g.state !== 'won') {
     if (g.state === 'serve' && g.ready) g.launch();
     if (g.state === 'play') {
