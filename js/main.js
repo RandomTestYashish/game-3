@@ -30,6 +30,9 @@ const debug = new URLSearchParams(location.search).has('debug');
 
 const CAM = { loading: 0, title: 0, intro: 0.14, courts: 0.38, tools: 0.5, countdown: 1, play: 1, paused: 1, complete: 0.82, name: 0.82, scores: 0.55 };
 for (const n of MP_SCREEN_NAMES) CAM[n] = 0.55; // multiplayer menus sit like the leaderboard
+// On short phones (a browser's bars take the height) the landing lifts its
+// horizon: the logo rises and the brick pyramid and the buttons get room.
+const camFor = (name) => (name === 'title' && W < 400 && H < 440 ? (H < 380 ? 0.48 : 0.32) : CAM[name]);
 const GAME_SCREENS = new Set(['countdown', 'play', 'paused', 'complete', 'name']);
 const PER_PAGE = 20;
 const KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ-';
@@ -92,7 +95,7 @@ function go(name) {
   if (S.leaving || name === S.screen) return;
   S.leaving = { name: S.screen, t: 0 };
   S.next = name;
-  aimCam(CAM[name]);
+  aimCam(camFor(name));
 }
 
 function aimCam(to) {
