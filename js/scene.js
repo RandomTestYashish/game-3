@@ -190,6 +190,7 @@ function makeLayers(id, T) {
     rect(x, HILL_H - b, 1, b, T.hills[1]);
   }
   if (id === 'india') hillFort(mid + 70, HILL_H - 26, T, rnd);
+  if (id === 'cairo') for (let x = 0; x < LW; x += 3 + Math.round(rnd() * 4)) rect(x, HILL_H - 12 - Math.round(rnd() * 8), 2, 1, '#d8a46a'); // wind ripples
   out.hills = hills.canvas;
 
   // Landmarks, between the hills and the trees.
@@ -204,6 +205,14 @@ function makeLayers(id, T) {
     westminster(mid, LAND_H, rnd);
   } else if (id === 'india') {
     palace(mid, LAND_H, rnd);
+  } else if (id === 'paris') {
+    paris(mid, LAND_H, rnd);
+  } else if (id === 'cairo') {
+    pyramids(mid, LAND_H, rnd);
+  } else if (id === 'rio') {
+    bay(LW, mid, LAND_H, rnd);
+  } else if (id === 'sydney') {
+    harbour(LW, mid, LAND_H, rnd);
   }
   out.land = land.canvas;
 
@@ -234,10 +243,10 @@ function makeLayers(id, T) {
   if (id === 'japan') {
     for (let x = 6; x < LW; x += 26 + rnd() * 16) if (side(x)) blossomTree(x, 96, 18 + rnd() * 8, T.blossom, rnd);
     for (let x = 8; x < LW; x += 40 + rnd() * 20) if (side(x) && rnd() < 0.5) cypress(x, 46 + rnd() * 20, 3 + rnd() * 2);
-  } else if (id === 'india') {
+  } else if (id === 'india' || id === 'cairo' || id === 'rio') {
     for (let x = 6; x < LW; x += 22 + rnd() * 18) if (side(x)) palm(x, 96, 40 + rnd() * 22, rnd() < 0.5 ? -1 : 1, tc);
     for (let x = 12; x < LW; x += 36) if (side(x)) bush(x + rnd() * 8, 82, 9 + rnd() * 4);
-  } else if (id === 'london') {
+  } else if (id === 'london' || id === 'paris') {
     for (let x = 4; x < LW; x += 24 + rnd() * 12) if (side(x)) { bush(x, 60 + rnd() * 10, 14 + rnd() * 6); bush(x + 8, 50 + rnd() * 10, 10 + rnd() * 5); }
     for (let x = 8; x < LW; x += 30 + rnd() * 14) if (side(x) && rnd() < 0.6) cypress(x, 56 + rnd() * 24, 4 + rnd() * 2);
   } else {
@@ -517,6 +526,121 @@ function palace(mid, y0, rnd) {
     }
     rect(cx, y0 - 49, 1, 3, hi);
   }
+}
+
+// Paris: zinc rooftops with chimneys and lit attic windows, and the iron
+// tower rising off-centre with its beacon.
+function paris(mid, y0, rnd) {
+  for (let x = mid - 130; x < mid + 130; ) {
+    const w = 16 + Math.round(rnd() * 14);
+    const h = 16 + Math.round(rnd() * 10);
+    rect(x, y0 - h, w, h, '#2a2838');
+    trap(y0 - h - 5, x + 3, x + w - 3, y0 - h, x, x + w, '#4a5068'); // mansard roof
+    for (let cx = x + 3; cx < x + w - 3; cx += 5) {
+      if (rnd() < 0.5) rect(cx, y0 - h - 3, 2, 2, '#ffd98a'); // dormers
+      for (let wy = y0 - h + 3; wy < y0 - 3; wy += 5) if (rnd() < 0.35) rect(cx, wy, 2, 3, '#ffcf7a');
+    }
+    if (rnd() < 0.6) rect(x + w - 6, y0 - h - 8, 3, 4, '#3a3448'); // chimney
+    x += w + 1;
+  }
+  const tx = mid + 44;
+  const iron = '#3a3044';
+  const hi = '#5a4a64';
+  const H0 = 84;
+  for (let i = 0; i < H0; i++) {
+    const t = i / H0;
+    const half = Math.round(2 + 20 * Math.pow(1 - t, 2.2));
+    const y = y0 - i;
+    if (t < 0.24) {
+      // The legs, with the open arch between them.
+      const gap = Math.round(Math.max(0, 14 * (1 - t / 0.24) * Math.sin((t / 0.24) * Math.PI * 0.5 + 0.9)));
+      rect(tx - half, y, half - gap, 1, iron);
+      rect(tx + gap, y, half - gap, 1, iron);
+    } else {
+      rect(tx - half, y, half * 2, 1, iron);
+      if ((i & 3) === 0) rect(tx - half + 1, y, half * 2 - 2, 1, hi); // lattice
+    }
+  }
+  for (const [k, w] of [[0.24, 26], [0.5, 14]]) rect(tx - w / 2, y0 - Math.round(H0 * k), w, 2, hi); // platforms
+  for (let i = 0; i < 18; i++) rect(tx - 12 + rnd() * 24, y0 - rnd() * H0 * 0.6, 1, 1, '#ffd98a'); // lights
+  rect(tx, y0 - H0 - 6, 1, 6, iron);
+  rect(tx - 1, y0 - H0 - 7, 3, 2, '#fff2c0'); // beacon
+}
+
+// Cairo: three pyramids lit on one face, an obelisk, and low mud-brick houses.
+function pyramids(mid, y0, rnd) {
+  for (const [cx, h] of [[mid + 20, 58], [mid - 40, 44], [mid + 78, 30]]) {
+    for (let i = 0; i < h; i++) {
+      const y = y0 - h + i;
+      rect(cx - i, y, i, 1, '#c98a52'); // the sunlit face
+      rect(cx, y, i + 1, 1, '#8a5a3a'); // the shaded face
+      if (i % 4 === 3) rect(cx - i, y, i * 2 + 1, 1, 'rgba(60,30,20,0.18)'); // courses of stone
+    }
+    rect(cx - 1, y0 - h, 2, 2, '#f2d29a'); // the capstone catching the light
+  }
+  const ox = mid - 92;
+  trap(y0 - 40, ox - 1, ox + 1, y0, ox - 4, ox + 4, '#b9814e');
+  rect(ox - 1, y0 - 43, 2, 3, '#f2d29a');
+  for (let x = mid - 130; x < mid + 130; ) {
+    const w = 10 + Math.round(rnd() * 12);
+    const h = 6 + Math.round(rnd() * 8);
+    rect(x, y0 - h, w, h, '#a8784a');
+    rect(x, y0 - h, w, 1, '#c99a66');
+    if (rnd() < 0.5) rect(x + 3, y0 - h + 3, 2, 2, '#ffc96b');
+    x += w + 2 + Math.round(rnd() * 8);
+  }
+}
+
+// Rio: steep green peaks rising from the bay, a cable car between the two,
+// a statue on the far summit, and the beach's lights along the water.
+function bay(LW, mid, y0, rnd) {
+  rect(0, y0 - 8, LW, 8, '#1a3a5a'); // the water
+  for (let x = 0; x < LW; x += 3) if (rnd() < 0.4) rect(x, y0 - 7 + Math.round(rnd() * 5), 2, 1, '#ffb870');
+  const peak = (cx, h, w, c, hi) => {
+    for (let i = 0; i < h; i++) {
+      const t = i / h;
+      const half = Math.round(w * Math.sqrt(1 - Math.pow(1 - t, 3)) * (0.35 + 0.65 * t));
+      rect(cx - half, y0 - 8 - h + i, half * 2 + 1, 1, c);
+      if (half > 2) rect(cx - half, y0 - 8 - h + i, 2, 1, hi);
+    }
+  };
+  peak(mid - 70, 70, 20, '#1c3a34', '#2c5a48'); // the high peak, statue on top
+  rect(mid - 71, y0 - 8 - 70 - 9, 3, 9, '#e8e2d0');
+  rect(mid - 75, y0 - 8 - 70 - 7, 11, 2, '#e8e2d0');
+  peak(mid + 58, 56, 16, '#1f4038', '#33604c');
+  peak(mid + 26, 26, 14, '#1a362e', '#2a5242');
+  line(mid + 26, y0 - 8 - 26, mid + 58, y0 - 8 - 56, '#0e1e22'); // cable car
+  rect(mid + 41, y0 - 8 - 40, 3, 3, '#ffd27a');
+  for (let x = mid - 130; x < mid + 130; x += 6) rect(x, y0 - 10, 1, 2, '#ffd27a'); // promenade lights
+}
+
+// Sydney: the opera house's white sails on the point, and the steel arch
+// bridge across the harbour behind.
+function harbour(LW, mid, y0, rnd) {
+  rect(0, y0 - 6, LW, 6, '#14284a'); // the water
+  for (let x = 0; x < LW; x += 3) if (rnd() < 0.35) rect(x, y0 - 5 + Math.round(rnd() * 4), 2, 1, '#f4b496');
+  const bx = mid + 62;
+  for (let x = -54; x <= 54; x++) {
+    const y = Math.round(y0 - 10 - 34 * (1 - (x / 54) * (x / 54)));
+    rect(bx + x, y, 1, 2, '#3a4660'); // the arch
+    if (x % 5 === 0 && y < y0 - 22) rect(bx + x, y + 2, 1, y0 - 22 - y - 2, '#2a3450'); // hangers
+  }
+  rect(bx - 62, y0 - 22, 124, 2, '#2a3450'); // the deck
+  for (const px of [bx - 58, bx + 54]) rect(px, y0 - 30, 6, 30 - 6, '#4a4e5e'); // pylons
+  for (let x = bx - 60; x < bx + 60; x += 4) rect(x, y0 - 23, 1, 1, '#ffe0a0');
+  const ox = mid - 46;
+  rect(ox - 38, y0 - 12, 76, 6, '#c8b8a0'); // the podium
+  const sail = (x, h, w, dir) => {
+    for (let i = 0; i < h; i++) {
+      const t = i / h;
+      const half = Math.round(w * Math.sin(t * Math.PI * 0.5));
+      const sx = x + dir * Math.round((1 - t) * w * 0.6);
+      rect(sx - (dir > 0 ? half : 0), y0 - 12 - h + i, half + 1, 1, '#f4f0e6');
+      rect(sx - (dir > 0 ? half : 0), y0 - 12 - h + i, 1, 1, '#c8c4bc');
+    }
+  };
+  for (const [dx, h, w] of [[-26, 18, 10], [-14, 26, 13], [0, 32, 15], [14, 22, 12], [26, 16, 9]]) sail(ox + dx, h, w, 1);
+  for (let x = ox - 34; x < ox + 34; x += 3) rect(x, y0 - 10, 1, 2, '#ffd98a');
 }
 
 function hillFort(cx, y, T, rnd) {
@@ -860,7 +984,7 @@ function drawSides(time) {
     }
   }
   // Lamp posts by the court, far to near.
-  const style = LAMP_STYLES[theme.countryId] || LAMP_STYLES.london;
+  const style = LAMP_STYLES[theme.countryId] || LAMP_STYLES[LAMP_LIKE[theme.countryId]] || LAMP_STYLES.london;
   for (const ly of LAMPS) {
     for (const side of [-1, 1]) {
       const lx = side < 0 ? -8 : WW + 8;
@@ -1005,6 +1129,10 @@ const LAMP_STYLES = {
     },
   },
 };
+
+// The newer countries borrow the nearest lamp: Paris and Sydney the Victorian
+// lamp, Cairo the brass lantern, Rio the city crook.
+const LAMP_LIKE = { paris: 'london', sydney: 'london', cairo: 'india', rio: 'newyork' };
 
 // The banner's logos, THE COURT (a tennis ball) and COURT BITES (a burger and
 // a drink), in 12-bit colour (4 bits per channel, written as 3-digit hex),

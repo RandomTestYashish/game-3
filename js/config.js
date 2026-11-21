@@ -13,8 +13,11 @@
 // NEVER put a secret key here: nothing starting "sb_secret_", and not "service_role".
 
 const DEFAULTS = {
-  supabaseUrl: 'https://cbbdhnzbqocckyyymszc.supabase.co',
-  supabaseAnonKey: 'sb_publishable_-i24A5KT1-sMIuI8_f38mA_V3eYeQSm',
+  // TEST BRANCH (code-5, game-3 link): the Rally board here is the multiplayer
+  // project's spare copy of the table, never the live leaderboard. A release
+  // to main puts main's own settings back.
+  supabaseUrl: 'https://jntfnwoyfvkjunvribgh.supabase.co',
+  supabaseAnonKey: 'sb_publishable_hoauA4wn-8YwaF732NYgSw_5z9EaG2p',
   table: 'thecourt',
   // Multiplayer's own Supabase project (the-court-multiplayer). Multiplayer uses
   // these and nothing else: it never falls back to the leaderboard settings
@@ -27,7 +30,7 @@ const DEFAULTS = {
   // PostHog analytics (js/analytics.js). Leave the key empty for no analytics.
   // Use the *project* API key ("phc_..."), from PostHog -> Settings -> Project.
   // It is public by design. NEVER put a personal API key ("phx_...") here.
-  posthogKey: 'phc_rm6zMezF2NFmnoS4xfFr7tKdbRAL7ziTfj4gfWG9Rhmb',
+  posthogKey: '', // off on the test branch: test visits never count as players
   posthogHost: 'https://us.i.posthog.com', // or https://eu.i.posthog.com for EU Cloud
 };
 

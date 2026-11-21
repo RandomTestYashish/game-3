@@ -1755,7 +1755,8 @@ function themeCard(c, cx, cy, cw, ch, ph, picked, nowTag, pick) {
   region(id, cx, cy, cw, ch, pick);
 }
 
-// Theme picker: Automatic, or one of the four countries. Picking one shows
+// Theme picker: Automatic, or one of the countries (two columns on a phone,
+// four on a wide screen; the cards shrink to fit the height). Picking one shows
 // it straight away behind the panel; the court itself carries on as it was.
 function drawThemeOverlay(k) {
   ctx.globalAlpha = 0.55 * k;
@@ -1764,11 +1765,14 @@ function drawThemeOverlay(k) {
   checker(0, 0, W, H, 'rgba(6,18,12,' + (0.35 * k).toFixed(2) + ')');
   const choice = save.data.settings.theme;
   const now = courtTheme();
-  const w = Math.min(W - 16, 300);
-  const cw = Math.floor((w - 30) / 2);
-  const ph = Math.round(clamp(cw * 0.42, 38, 60));
+  const cols = W >= 420 ? 4 : 2;
+  const rows = Math.ceil(COUNTRIES.length / cols);
+  const w = Math.min(W - 16, cols === 4 ? 560 : 300);
+  const cw = Math.floor((w - 24 - (cols - 1) * 6) / cols);
+  const fitCh = Math.floor((H - 16 - 132) / rows) - 6; // the tallest card that still fits
+  const ph = Math.round(clamp(Math.min(cw * 0.42, fitCh - 24), 18, 60));
   const ch = ph + 24;
-  const h = 96 + ch * 2 + 8 + 34;
+  const h = 90 + rows * (ch + 6) + 42;
   const x = Math.round((W - w) / 2);
   const y = Math.round((H - h) / 2);
   panel(easeBack(k), x, y, w, h, 'dark', () => {
@@ -1780,8 +1784,8 @@ function drawThemeOverlay(k) {
     text(auto ? 'A NEW COUNTRY EVERY 2 COURTS' : 'KEPT ON EVERY COURT', W / 2, y + 63, PAL.dim, { align: 'center' });
     text('THIS COURT: ' + now.countryName + (now.isBlackCourt ? ' - BLACK COURT' : ''), W / 2, y + 75, PAL.cream, { align: 'center' });
     COUNTRIES.forEach((c, i) => {
-      const cx = x + 12 + (i % 2) * (cw + 6);
-      const cy = y + 90 + Math.floor(i / 2) * (ch + 6);
+      const cx = x + 12 + (i % cols) * (cw + 6);
+      const cy = y + 90 + Math.floor(i / cols) * (ch + 6);
       themeCard(c, cx, cy, cw, ch, ph, choice === c.id, auto && now.countryId === c.id, () => chooseTheme(c.id));
     });
     pill('themedone', 'DONE', W / 2, y + h - 27, 80, 17, closeTheme);

@@ -1,8 +1,9 @@
-// Court themes: four country environments, a Black Court surface on every
+// Court themes: eight country environments, a Black Court surface on every
 // third court, and the player's choice between automatic rotation and one
 // fixed country. Visual only: nothing here touches the rules.
 //
-//   country  = floor((court - 1) / 2) % 4   Japan, New York, London, India
+//   country  = floor((court - 1) / 2) % 8   Japan, New York, London, India,
+//                                           Paris, Cairo, Rio, Sydney
 //   black    = court % 3 === 0              independent of the country
 
 export const COUNTRIES = [
@@ -81,6 +82,82 @@ export const COUNTRIES = [
       lamp: '#FFC96B',
     },
     ambient: { petals: '#FFAD5C', petalsHi: '#ffd19a', petalRate: 0.7, fireflies: true },
+  },
+  {
+    id: 'paris',
+    name: 'PARIS',
+    title: 'EIFFEL EVENING',
+    short: 'EIFFEL EVENING',
+    accent: '#B9A0E8',
+    court: { court: '#2F5A4A', alt: '#3B6B58', lines: '#ECE6D2' },
+    black: { court: '#08090F', alt: '#12141F', lines: '#C8B4F0' },
+    bg: {
+      sky: ['#141633', '#22244f', '#3a3268', '#5e4282', '#8c5a94', '#c27f9c', '#f0b8a4'],
+      sun: { x: 46, lift: 12, r: 10, c: '#ffd8c0', band: '#f2a890', glow: '#ffc8b0' },
+      clouds: ['#2e2c58', '#a56c8e'],
+      hills: ['#2c2c50', '#20263a'],
+      trees: { dark: '#17321f', hi: '#2e5c3a', shade: '#0e2216', bush: '#1b3e27', bushHi: '#265433' },
+      wall: { base: '#8a8478', top: '#b4ad9e', top2: '#9c9688', line: '#6c675d', speck: ['#958f82', '#7a756a'], pillar: '#9c9688', pillarTop: '#bdb6a6' },
+      lamp: '#FFD98A',
+    },
+    ambient: { petals: '#e9d8f4', petalsHi: '#c8b4f0', petalRate: 0.6, fireflies: true },
+  },
+  {
+    id: 'cairo',
+    name: 'CAIRO',
+    title: 'DESERT SUN',
+    short: 'DESERT SUN',
+    accent: '#F2C14E',
+    court: { court: '#4A6A3A', alt: '#5A7B47', lines: '#F4E6C0' },
+    black: { court: '#0C0A08', alt: '#1A1510', lines: '#F2C14E' },
+    bg: {
+      sky: ['#13203F', '#22305a', '#3f3d6a', '#7a4c62', '#c0684a', '#e8944a', '#FFD27A'],
+      sun: { x: -36, lift: 6, r: 16, c: '#fff0b0', band: '#ffc45c', glow: '#ffd27a' },
+      clouds: ['#2f3560', '#d08a5a'],
+      hills: ['#b9814e', '#9a6a40'],
+      trees: { dark: '#2a4a24', hi: '#4a7a36', shade: '#1a3016', bush: '#2e5028', bushHi: '#3f6a32' },
+      wall: { base: '#C9A06A', top: '#E8C890', top2: '#d6b07a', line: '#a07a4a', speck: ['#d2aa74', '#b48a58'], pillar: '#d6b07a', pillarTop: '#ecd09a' },
+      lamp: '#FFC96B',
+    },
+    ambient: { petals: '#e8c98a', petalsHi: '#fff0c8', petalRate: 0.5, fireflies: false },
+  },
+  {
+    id: 'rio',
+    name: 'RIO',
+    title: 'SUGARLOAF BAY',
+    short: 'SUGARLOAF BAY',
+    accent: '#3FD6B0',
+    court: { court: '#1F5E4A', alt: '#2A705A', lines: '#E6F0DA' },
+    black: { court: '#060C0C', alt: '#0F1A1A', lines: '#3FD6B0' },
+    bg: {
+      sky: ['#0E1E3A', '#163460', '#2a4a7a', '#7a4a86', '#d0567a', '#f8885c', '#ffc86a'],
+      sun: { x: 30, lift: 4, r: 13, c: '#ffe0a0', band: '#ff9c5c', glow: '#ffb870' },
+      clouds: ['#2a3a6a', '#d8707a'],
+      hills: ['#1e3a4a', '#163030'],
+      trees: { dark: '#0f3a26', hi: '#1f6a40', shade: '#082818', bush: '#124a2c', bushHi: '#1c6a3c' },
+      wall: { base: '#E0D6C0', top: '#F4ECDA', top2: '#e8dfca', line: '#b8ad96', speck: ['#d6cbb2', '#c4b89e'], pillar: '#e8dfca', pillarTop: '#fff6e4' },
+      lamp: '#FFD27A',
+    },
+    ambient: { petals: null, petalRate: 0, fireflies: true },
+  },
+  {
+    id: 'sydney',
+    name: 'SYDNEY',
+    title: 'HARBOUR LIGHTS',
+    short: 'HARBOUR LIGHTS',
+    accent: '#7FC8F8',
+    court: { court: '#245848', alt: '#306a58', lines: '#E8EEE0' },
+    black: { court: '#05090F', alt: '#0D1520', lines: '#7FC8F8' },
+    bg: {
+      sky: ['#0C1630', '#14244c', '#22386a', '#3c4e86', '#7a6a9a', '#c4889a', '#f4b496'],
+      sun: { x: -48, lift: 10, r: 10, c: '#ffe2c0', band: '#f4a888', glow: '#ffd0b0' },
+      clouds: ['#22305c', '#9a7a9c'],
+      hills: ['#1e2a48', '#152038'],
+      trees: { dark: '#16382a', hi: '#2c5e44', shade: '#0c241a', bush: '#18402c', bushHi: '#22563a' },
+      wall: { base: '#6e6a66', top: '#9a958e', top2: '#827d77', line: '#55524e', speck: ['#78736d', '#605c58'], pillar: '#827d77', pillarTop: '#a6a098' },
+      lamp: '#FFE0A0',
+    },
+    ambient: { petals: null, petalRate: 0, fireflies: true },
   },
 ];
 
