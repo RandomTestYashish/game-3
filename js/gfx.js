@@ -583,6 +583,11 @@ export const METAL = {
 // its rim at y, in pixels of size s. About 24 x 17 units: handles reach 12
 // units either side.
 export function cup(cx, y, s = 1, m = GOLD) {
+  const bx = 13 * s + 2;
+  const by = 2 * s + 2;
+  smoothDraw('cup|' + s + '|' + m.g, Math.round(cx) - bx, Math.round(y) - by, bx * 2, 20 * s + 4, (ox, oy) => cupPixels(ox + bx, oy + by, s, m));
+}
+function cupPixels(cx, y, s, m) {
   const parts = [];
   const bowl = [8, 8, 8, 7, 7, 6, 5, 4, 3];
   bowl.forEach((hw, r) => parts.push([-hw, r, hw * 2, 1, r === 0 ? m.l : m.g]));
@@ -616,6 +621,10 @@ export function trophy(x, y) {
 // A laurel branch curving around (cx, cy) on one side (-1 left, 1 right):
 // a stem with leaves in pairs, smaller towards the tip.
 export function laurel(cx, cy, r, side, n = 6, c = '#2f8f6e', hi = '#5cc597') {
+  const b = Math.ceil(r) + 6;
+  smoothDraw(['laurel', r, side, n, c, hi].join('|'), Math.round(cx) - b, Math.round(cy) - b, b * 2, b * 2, (ox, oy) => laurelPixels(ox + b, oy + b, r, side, n, c, hi));
+}
+function laurelPixels(cx, cy, r, side, n, c, hi) {
   const at = (t) => {
     const a = Math.PI * (0.3 + 0.62 * t);
     return [cx + side * r * Math.sin(a), cy - r * Math.cos(a), a];
@@ -652,6 +661,9 @@ export function rays(cx, cy, r0, r1, t, c = PAL.yellow) {
 
 // A little globe, 13 x 13.
 export function globe(x, y) {
+  smoothDraw('globe', x, y, 14, 14, globePixels);
+}
+function globePixels(x, y) {
   disc(x + 6, y + 6, 6, '#0d1430');
   disc(x + 6, y + 6, 5, '#2f6fd6');
   rect(x + 3, y + 3, 3, 2, '#4caf50');
@@ -703,7 +715,7 @@ for (const k in ICONS) ICONS[k] = ICONS[k].split('/');
 // the stair-steps of a 1-bit pattern at 2x or 3x, keeping its shape.
 function scaleNx(src, w, h, n) {
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : src[y * w + x]);
-  const out = new Uint8Array(w * n * h * n);
+  const out = new src.constructor(w * n * h * n); // 1-bit masks or 32-bit colours alike
   const W2 = w * n;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -768,6 +780,46 @@ export function smoothSprite(rows, on, c, k) {
   cv = { canvas: lay.canvas, w, h };
   smoothCache.set(key, cv);
   return cv;
+}
+
+// A small pixel drawing made smooth for HD: fn(ox, oy) paints it with its box
+// at (ox, oy) on a 1x layer, which is then upscaled with Scale2x/3x (colour
+// version) and cached under key; at 1x it simply paints in place.
+const drawnCache = new Map();
+export function smoothDraw(key, x, y, w, h, fn) {
+  const k = kNow();
+  x = Math.round(x);
+  y = Math.round(y);
+  if (k === 1) {
+    fn(x, y);
+    return;
+  }
+  const n = Math.min(4, k);
+  const ck = key + '|' + n;
+  let cv = drawnCache.get(ck);
+  if (!cv) {
+    const lay = makeLayer(w, h);
+    const was = ctx;
+    ctx = lay;
+    fn(0, 0);
+    ctx = was;
+    let px = new Uint32Array(lay.getImageData(0, 0, w, h).data.buffer);
+    let mw = w;
+    let mh = h;
+    for (const f of n >= 4 ? [2, 2] : n === 3 ? [3] : [2]) {
+      px = scaleNx(px, mw, mh, f);
+      mw *= f;
+      mh *= f;
+    }
+    const big = makeLayer(mw, mh);
+    const img = big.createImageData(mw, mh);
+    new Uint32Array(img.data.buffer).set(px);
+    big.putImageData(img, 0, 0);
+    cv = big.canvas;
+    if (drawnCache.size > 400) drawnCache.clear();
+    drawnCache.set(ck, cv);
+  }
+  ctx.drawImage(cv, x, y, w, h);
 }
 
 export function icon(name, x, y, c, scale = 1) {

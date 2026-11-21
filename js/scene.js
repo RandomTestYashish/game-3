@@ -1,7 +1,7 @@
 // The garden court: camera projection, parallax background layers and the
 // shared sprite painters (blocks, ball, paddle).
 
-import { W, H, K, ctx, PAL, makeLayer, makeScreenLayer, setTarget, rect, disc, ellipse, line, trap, rrect, text, textW, lerp, mulberry, bayer } from './gfx.js';
+import { W, H, K, ctx, PAL, makeLayer, makeScreenLayer, smoothDraw, setTarget, rect, disc, ellipse, line, trap, rrect, text, textW, lerp, mulberry, bayer } from './gfx.js';
 import { WW, WH, PADDLE_Y } from './game.js';
 import { COUNTRIES } from './themes.js';
 
@@ -1359,7 +1359,10 @@ const LOGO_BURGER = [
 ];
 const LOGO_DRINK = ['....wo', '...so.', 'oiiiio', 'oRrrdo', 'owwWWo', 'oRrrdo', 'oRrrdo', '.oddo.'];
 function logo(rows, x, y) {
-  rows.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && C12[ch] && rect(x + i, y + j, 1, 1, C12[ch])));
+  const w = Math.max(...rows.map((r) => r.length));
+  smoothDraw('logo|' + rows.join('/'), x, y, w, rows.length, (ox, oy) =>
+    rows.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && C12[ch] && rect(ox + i, oy + j, 1, 1, C12[ch]))),
+  );
 }
 // Two-tone lettering: the lower part in `lo`, the top three rows in `hi`.
 const BANNER_SP = 2; // the banner's letter spacing, in pixels
