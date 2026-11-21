@@ -1,3 +1,14 @@
-BarlowCondensed-SemiBold.woff2: Barlow Condensed SemiBold (latin subset) by
-Jeremy Tribby, from Google Fonts. SIL Open Font License 1.1 (see OFL.txt).
-Used for the game's small text when it is drawn in HD.
+Fonts bundled with The Court (so every phone shows the same type):
+
+BarlowCondensed-SemiBold.woff2  Barlow Condensed SemiBold, latin subset, by The
+                                Barlow Project Authors (Jeremy Tribby). SIL Open
+                                Font License 1.1 (OFL.txt). The game's text in HD.
+Gelasio-Bold.woff2              Gelasio Bold, latin subset, by The Gelasio Project
+                                Authors (SorkinType), metric-compatible with
+                                Georgia. SIL Open Font License 1.1
+                                (OFL-Gelasio.txt). THE COURT and the titles.
+Tinos-Bold-digits.woff2         Tinos Bold, digits 0-9 only, by Steve Matteson
+                                (Google), metric-compatible with Times New Roman.
+                                Apache License 2.0 (LICENSE-Apache-2.0.txt). The
+                                titles' numbers (lining figures).
+All from Google Fonts.

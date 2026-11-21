@@ -47,6 +47,19 @@ function loadTextFont() {
       textFontReady = true;
     })
     .catch(() => {});
+  // The titles' serif, bundled so every phone shows the same THE COURT:
+  // Gelasio (Georgia's shapes and widths) and Tinos for its numbers (Times
+  // New Roman's lining figures). Glyphs drawn with a stand-in before they
+  // arrive are thrown away once they do.
+  for (const [family, file] of [[SERIF_FONT, 'Gelasio-Bold.woff2'], [SERIF_DIGIT_FONT, 'Tinos-Bold-digits.woff2']]) {
+    new FontFace(family, 'url(assets/fonts/' + file + ')', { weight: '700' })
+      .load()
+      .then((ff) => {
+        document.fonts.add(ff);
+        serifCache.clear();
+      })
+      .catch(() => {});
+  }
 }
 
 export function setSize(w, h, k = K) {
@@ -499,9 +512,11 @@ export function text(str, x, y, c, o = {}) {
 // Display type: a system serif rasterised small and thresholded into hard pixels.
 
 const serifCache = new Map();
-const SERIF = "bold %px Georgia, 'Times New Roman', Times, serif";
+const SERIF_FONT = 'CourtSerif';
+const SERIF_DIGIT_FONT = 'CourtDigits';
+const SERIF = "bold %px CourtSerif, Georgia, 'Times New Roman', Times, serif";
 // Georgia's numerals are old-style (they dip below the baseline); use lining figures.
-const SERIF_DIGITS = "bold %px 'Times New Roman', Times, serif";
+const SERIF_DIGITS = "bold %px CourtDigits, 'Times New Roman', Times, serif";
 
 function serifGlyph(ch, size, color, k = 1) {
   const key = ch + '|' + size + '|' + color + '|' + k;
@@ -517,6 +532,14 @@ function serifGlyph(ch, size, color, k = 1) {
   lay.textBaseline = 'alphabetic';
   lay.fillStyle = '#fff';
   lay.fillText(ch, pad * k, size * k);
+  if (!(ch >= '0' && ch <= '9')) {
+    // Gelasio Bold is a touch lighter than the Georgia Bold the titles were
+    // drawn in; a hairline outline (1/60 of the size) brings it to the same weight.
+    lay.strokeStyle = '#fff';
+    lay.lineJoin = 'round';
+    lay.lineWidth = (size * k) / 60;
+    lay.strokeText(ch, pad * k, size * k);
+  }
   const img = lay.getImageData(0, 0, lay.canvas.width, lay.canvas.height);
   const d = img.data;
   const r = parseInt(color.slice(1, 3), 16);
