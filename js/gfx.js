@@ -23,6 +23,23 @@ export function initCanvas(canvas) {
   main.imageSmoothingEnabled = false;
   main.__k = 1;
   ctx = main;
+  loadTextFont();
+}
+
+// HD text: Barlow Condensed (assets/fonts, SIL OFL), drawn into the bitmap
+// font's own cells so every layout stays as it was. Until it has loaded (and
+// on 1x canvases) the bitmap font is used.
+const TEXT_FONT = 'CourtSans';
+let textFontReady = false;
+function loadTextFont() {
+  if (typeof FontFace === 'undefined' || !document.fonts) return;
+  const f = new FontFace(TEXT_FONT, 'url(assets/fonts/BarlowCondensed-SemiBold.woff2)', { weight: '600' });
+  f.load()
+    .then((ff) => {
+      document.fonts.add(ff);
+      textFontReady = true;
+    })
+    .catch(() => {});
 }
 
 export function setSize(w, h, k = K) {
@@ -373,6 +390,33 @@ export function textW(str, scale = 1, sp = 1) {
 
 function glyphs(str, x, y, c, sc, sp) {
   ctx.fillStyle = c;
+  if (textFontReady && kNow() > 1) {
+    // Each letter centred in its bitmap cell, capitals 7 cells tall, and
+    // squeezed only if it would spill well past the cell.
+    ctx.save();
+    ctx.font = '600 ' + 10 * sc + 'px ' + TEXT_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    for (const ch of str) {
+      const g = FONT[ch] || FONT['?'];
+      const cw = g[0].length * sc;
+      if (ch !== ' ') {
+        const cx = x + cw / 2;
+        const m = ctx.measureText(ch).width;
+        const room = cw + sc * 1.4;
+        if (m > room) {
+          ctx.save();
+          ctx.translate(cx, 0);
+          ctx.scale(room / m, 1);
+          ctx.fillText(ch, 0, y + 7 * sc);
+          ctx.restore();
+        } else ctx.fillText(ch, cx, y + 7 * sc);
+      }
+      x += (g[0].length + sp) * sc;
+    }
+    ctx.restore();
+    return;
+  }
   for (const ch of str) {
     const g = FONT[ch] || FONT['?'];
     for (let r = 0; r < 7; r++) {
@@ -655,9 +699,86 @@ const ICONS = {
 };
 for (const k in ICONS) ICONS[k] = ICONS[k].split('/');
 
+// Pixel art made smooth for HD: Scale2x / Scale3x (the EPX family) round off
+// the stair-steps of a 1-bit pattern at 2x or 3x, keeping its shape.
+function scaleNx(src, w, h, n) {
+  const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : src[y * w + x]);
+  const out = new Uint8Array(w * n * h * n);
+  const W2 = w * n;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const A = at(x - 1, y - 1), B = at(x, y - 1), C = at(x + 1, y - 1);
+      const D = at(x - 1, y), E = at(x, y), F = at(x + 1, y);
+      const G = at(x - 1, y + 1), H = at(x, y + 1), I = at(x + 1, y + 1);
+      let e;
+      if (n === 2) {
+        e = [D === B && D !== H && B !== F ? B : E, B === F && B !== D && F !== H ? F : E, D === H && D !== B && H !== F ? D : E, H === F && D !== H && B !== F ? F : E];
+      } else {
+        e = [
+          D === B && B !== F && D !== H ? D : E,
+          (D === B && B !== F && D !== H && E !== C) || (B === F && B !== D && F !== H && E !== A) ? B : E,
+          B === F && B !== D && F !== H ? F : E,
+          (D === B && B !== F && D !== H && E !== G) || (D === H && D !== B && H !== F && E !== A) ? D : E,
+          E,
+          (B === F && B !== D && F !== H && E !== I) || (H === F && D !== H && B !== F && E !== C) ? F : E,
+          D === H && D !== B && H !== F ? D : E,
+          (D === H && D !== B && H !== F && E !== I) || (H === F && D !== H && B !== F && E !== G) ? H : E,
+          H === F && D !== H && B !== F ? F : E,
+        ];
+      }
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) out[(y * n + j) * W2 + x * n + i] = e[j * n + i];
+    }
+  }
+  return out;
+}
+
+// A 1-bit pattern (rows of '#'/'X') as a smooth sprite at k device pixels per
+// cell, in one colour; cached.
+const smoothCache = new Map();
+export function smoothSprite(rows, on, c, k) {
+  const key = rows.join('/') + '|' + c + '|' + k;
+  let cv = smoothCache.get(key);
+  if (cv) return cv;
+  const w = Math.max(...rows.map((r) => r.length));
+  const h = rows.length;
+  let m = new Uint8Array(w * h);
+  rows.forEach((r, y) => {
+    for (let x = 0; x < r.length; x++) m[y * w + x] = r[x] === on ? 1 : 0;
+  });
+  let mw = w;
+  let mh = h;
+  for (const n of k >= 4 ? [2, 2] : k === 3 ? [3] : [2]) {
+    m = scaleNx(m, mw, mh, n);
+    mw *= n;
+    mh *= n;
+  }
+  const lay = makeLayer(mw, mh);
+  const img = lay.createImageData(mw, mh);
+  const r = parseInt(c.slice(1, 3), 16);
+  const g = parseInt(c.slice(3, 5), 16);
+  const b = parseInt(c.slice(5, 7), 16);
+  for (let i = 0; i < m.length; i++) {
+    if (!m[i]) continue;
+    img.data[i * 4] = r;
+    img.data[i * 4 + 1] = g;
+    img.data[i * 4 + 2] = b;
+    img.data[i * 4 + 3] = 255;
+  }
+  lay.putImageData(img, 0, 0);
+  cv = { canvas: lay.canvas, w, h };
+  smoothCache.set(key, cv);
+  return cv;
+}
+
 export function icon(name, x, y, c, scale = 1) {
   const g = ICONS[name];
   if (!g) return;
+  const k = kNow();
+  if (k > 1 && /^#[0-9a-fA-F]{6}$/.test(c)) {
+    const sp = smoothSprite(g, '#', c, Math.min(4, k * scale));
+    ctx.drawImage(sp.canvas, Math.round(x), Math.round(y), sp.w * scale, sp.h * scale);
+    return;
+  }
   x = Math.round(x);
   y = Math.round(y);
   ctx.fillStyle = c;
