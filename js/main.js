@@ -556,6 +556,17 @@ function openTheme() {
   S.overlay = S.overlayKind = 'theme';
 }
 
+// The landing's THEME button: each tap jumps to another country at random
+// (never the one showing), kept like a pick from the picker, and names it.
+function shuffleTheme() {
+  const now = courtTheme().countryId;
+  const pool = COUNTRIES.filter((c) => c.id !== now);
+  const c = pool[Math.floor(Math.random() * pool.length)];
+  chooseTheme(c.id);
+  S.themeNote = { name: c.name, title: c.title, at: S.time };
+  audio.sfx('click');
+}
+
 function closeTheme() {
   S.overlay = false;
   save.commit();
@@ -1017,9 +1028,9 @@ const SCREENS = {
     rect(W / 2 - 22, top + 58, 44, 1, PAL.cream);
     const p = S.ready ? clamp(S.t / 1.2, 0, 1) : clamp(S.t / 1.2, 0, 0.85);
     const cy = Math.max(top + 76, titleLayout().a.y - 4);
-    drawRallyLoader(cy, p, 'LOADING');
-    const tip = LOADING_TIPS[S.tip % LOADING_TIPS.length];
-    wrap(tip, Math.min(200, W - 24)).forEach((l, i) => text(l, W / 2, cy + 64 + i * 10, PAL.cream, { align: 'center', shadow: PAL.ink }));
+    drawThinking(cy, p, 'PREPARING YOUR COURT', ['READING YOUR SAVE', 'BUILDING THE COURT', 'WARMING UP THE CROWD']);
+    const tip = wrap(LOADING_TIPS[S.tip % LOADING_TIPS.length], Math.min(200, W - 24));
+    if (cy + 82 + tip.length * 10 <= H - 4) tip.forEach((l, i) => text(l, W / 2, cy + 82 + i * 10, PAL.cream, { align: 'center', shadow: PAL.ink })); // short screens skip it
     ctx.globalAlpha = 1;
   },
 
@@ -1070,20 +1081,32 @@ const SCREENS = {
       go('scores');
     };
     // Phones: square tiles (icon over label); wide screens: icon beside label.
-    const row = [['courts', 'COURTS', 'bricks', () => go('courts')], ['scores', 'SCORES', 'trophy', scores], ['theme', 'THEME', 'theme', openTheme], ['sound', 'SOUND', 'sound', openSound]];
+    const row = [['courts', 'COURTS', 'bricks', () => go('courts')], ['scores', 'SCORES', 'trophy', scores], ['theme', 'THEME', 'theme', shuffleTheme], ['sound', 'SOUND', 'sound', openSound]];
     row.forEach(([id, label, ic, fn], i) => {
       const cx = L.row.x + bw * (i + 0.5) + i * 5;
       if (L.tiles) tile(id, label, ic, cx, L.row.y + lift, bw, L.rh, fn);
       else ghost(id, label, cx, L.row.y + lift, bw, 17, fn, { sp: 1, icon: ic });
     });
     drawSignature(k);
+    // The country THEME just shuffled to, under the logo for a moment.
+    const tn = S.themeNote;
+    if (tn && S.time - tn.at < 1.8) {
+      const age = S.time - tn.at;
+      const label = tn.name + '  ' + tn.title;
+      const mw = textW(label, 1, 1) + 18;
+      const ny = top + 66 - (age < 0.15 ? Math.round((1 - age / 0.15) * 4) : 0);
+      ctx.globalAlpha = k * Math.min(1, (1.8 - age) / 0.3);
+      rrect(W / 2 - mw / 2 - 1, ny - 1, mw + 2, 17, 6, PAL.ink);
+      rrect(W / 2 - mw / 2, ny, mw, 15, 5, PAL.yellow);
+      text(label, W / 2, ny + 4, PAL.ink, { align: 'center', sp: 1 });
+    }
     ctx.globalAlpha = 1;
     S.primary = play;
   },
 
   intro(k) {
-    // The landing's THE RALLY card comes up into the middle, then the rally
-    // loader (GET READY and its count) runs before the courts.
+    // The landing's THE RALLY card comes up into the middle, then the
+    // thinking loader ticks off its steps before the courts.
     ctx.globalAlpha = k;
     const L = titleLayout();
     const cw = L.cw;
@@ -1093,7 +1116,7 @@ const SCREENS = {
     ctx.globalAlpha = k * Math.min(1, q * 2);
     card('introcard', 'THE RALLY', null, x, y + Math.round((1 - easeBack(q)) * 24), cw, L.ch, afterIntro, { t: S.time, art: cardArt.ball });
     ctx.globalAlpha = k * clamp((S.t - 0.35) / 0.3, 0, 1);
-    drawRallyLoader(y + L.ch + 14, clamp((S.t - 0.3) / 2.1, 0, 1), 'GET READY');
+    drawThinking(y + L.ch + 14, clamp((S.t - 0.3) / 2.1, 0, 1), 'SETTING UP YOUR RALLY', ['PICKING YOUR COURT', 'STACKING THE BRICKS', 'READY TO SERVE']);
     ctx.globalAlpha = 1;
     const skip = afterIntro;
     region('skip', 0, 0, W, H, skip);
@@ -1910,70 +1933,74 @@ function drawLogo(top, wave, color = PAL.cream, shadow = '#000000') {
   }
 }
 
-// The rally loader: a little side-on court on a dark plate, two black bars
-// hitting a ball over the net, and LOADING 64% (label and p from 0 to 1)
-// under it in the scoreboard's colours.
-function drawRallyLoader(cy, p, label) {
-  const bw = Math.min(176, W - 40);
+// The loader, dressed like an AI assistant at work: a glowing sparkle, a
+// headline with a light sweeping through it, and its steps ticking off one
+// by one (done, working with a spinner, still to come) as p goes 0 to 1.
+const SPARKLE_HUES = ['#c9a6ff', '#8fb8ff', '#7fe0d0', '#f2d45c'];
+function sparkle4(cx, cy, r, c) {
+  rect(cx, cy - r, 1, r * 2 + 1, c);
+  rect(cx - r, cy, r * 2 + 1, 1, c);
+  if (r > 2) {
+    rect(cx - 1, cy - Math.round(r / 2), 3, r + 1, c);
+    rect(cx - Math.round(r / 2), cy - 1, r + 1, 3, c);
+  }
+}
+function drawThinking(cy, p, headline, steps) {
+  const bw = Math.min(196, W - 32);
   const x0 = Math.round(W / 2 - bw / 2);
+  const h = 34 + steps.length * 12;
   const a0 = ctx.globalAlpha;
-  // The plate and the court.
-  rrect(x0 - 2, cy - 2, bw + 4, 58, 7, PAL.ink);
-  rrect(x0 - 1, cy - 1, bw + 2, 56, 6, '#5f7a64');
-  rrect(x0, cy, bw, 54, 5, '#0d1f16');
-  const gy = cy + 34; // the ground line
-  rect(x0 + 6, gy, bw - 12, 5, '#2f6b45');
-  rect(x0 + 6, gy, bw - 12, 1, PAL.cream);
-  for (let gx = x0 + 10; gx < x0 + bw - 10; gx += 8) rect(gx, gy + 3, 4, 1, '#3c7d52');
-  const nx = Math.round(W / 2);
-  rect(nx, gy - 9, 1, 9, '#c9d3c3'); // the net: a post, a white band, the mesh
-  rect(nx - 1, gy - 10, 3, 1, PAL.cream);
-  for (let ny = gy - 8; ny < gy; ny += 2) rect(nx - 1, ny, 3, 1, '#7d8a80');
-  // The two bars, a hop up as the ball reaches each.
-  const lx = x0 + 18;
-  const rx = x0 + bw - 18;
-  const leg = 0.55;
-  const i = Math.floor(S.time / leg);
-  const u = (S.time % leg) / leg;
-  const from = i % 2 ? rx : lx;
-  const to = i % 2 ? lx : rx;
-  const by = gy - 5;
-  const bar = (cx, near) => {
-    const lift = near ? Math.round((1 - near) * 2) : 0;
-    rrect(cx - 10, by - 4 - lift, 20, 8, 4, '#8d96a3'); // a pale rim, as on a Black Court
-    rrect(cx - 9, by - 3 - lift, 18, 6, 3, '#0d0f12');
-    rect(cx - 7, by - 3 - lift, 14, 1, '#4a505b');
-    rect(cx - 7, by + 1 - lift, 14, 1, PAL.yellow);
-  };
-  bar(lx, from === lx && u < 0.2 ? u / 0.2 : 0);
-  bar(rx, from === rx && u < 0.2 ? u / 0.2 : 0);
-  // The ball: an arc over the net, a fading trail, its shadow on the ground.
-  const at = (v) => ({ x: lerp(from, to, v), y: by - 8 - Math.sin(v * Math.PI) * 16 });
-  for (let v = Math.max(0, u - 0.3); v < u; v += 0.06) {
-    const q = at(v);
-    ctx.globalAlpha = a0 * (0.15 + 0.6 * (1 - (u - v) / 0.3));
-    rect(q.x, q.y, 2, 2, PAL.yellow);
-  }
+  rrect(x0 - 2, cy - 2, bw + 4, h + 4, 7, PAL.ink);
+  rrect(x0 - 1, cy - 1, bw + 2, h + 2, 6, '#4a3f6a'); // a violet rim, the assistant's colour
+  rrect(x0, cy, bw, h, 5, '#0f1420');
+  // The sparkle: a big star and a little one, breathing and changing hue.
+  const hue = SPARKLE_HUES[Math.floor(S.time * 2.5) % SPARKLE_HUES.length];
+  const br = 4 + Math.round((Math.sin(S.time * 5) + 1) * 1.2);
+  const sx = x0 + 15;
+  const sy = cy + 13;
+  ctx.globalAlpha = a0 * 0.25;
+  disc(sx, sy, br + 3, hue);
   ctx.globalAlpha = a0;
-  const b = at(u);
-  drawShadow(b.x, gy + 1, 3, 1, 0.4);
-  drawBall(b.x, b.y, 4);
-  if (u < 0.2 && i > 0) {
-    for (let sk = 0; sk < 5; sk++) {
-      const ang = Math.PI * (1.1 + sk * 0.2);
-      const r = 4 + u * 30;
-      ctx.globalAlpha = a0 * (1 - u * 5);
-      rect(from + Math.cos(ang) * r, by - 5 + Math.sin(ang) * r, 1, 1, sk % 2 ? '#ffffff' : PAL.yellow);
+  sparkle4(sx, sy, br, hue);
+  sparkle4(sx + 8, sy - 6, 1 + (Math.floor(S.time * 4) % 2), '#ffffff');
+  // The headline, with a band of light running through it.
+  const tx = x0 + 28;
+  const ty = cy + 10;
+  const tw = textW(headline, 1, 1);
+  text(headline, tx, ty, '#b8b0d8', { sp: 1 });
+  const band = tx - 20 + ((S.time * 70) % (tw + 40));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(band, ty - 2, 12, 11);
+  ctx.clip();
+  text(headline, tx, ty, '#ffffff', { sp: 1 });
+  ctx.restore();
+  rect(x0 + 8, cy + 24, bw - 16, 1, '#232a3c');
+  // The steps.
+  const n = steps.length;
+  const cur = Math.min(n, Math.floor(clamp(p, 0, 1) * n + 0.0001));
+  steps.forEach((st, i) => {
+    const y = cy + 31 + i * 12;
+    const ix = x0 + 15;
+    if (i < cur || p >= 1) {
+      rect(ix - 3, y + 2, 2, 2, PAL.yellow); // a tick
+      rect(ix - 1, y + 3, 1, 2, PAL.yellow);
+      rect(ix, y + 1, 1, 3, PAL.yellow);
+      rect(ix + 1, y - 1, 1, 3, PAL.yellow);
+      text(st, tx, y, '#8a93a8', { sp: 1 });
+    } else if (i === cur) {
+      for (let d = 0; d < 3; d++) {
+        const ang = S.time * 7 + (d * Math.PI * 2) / 3;
+        ctx.globalAlpha = a0 * (0.4 + 0.2 * d);
+        rect(ix + Math.round(Math.cos(ang) * 3), y + 2 + Math.round(Math.sin(ang) * 3), 2, 2, hue);
+      }
+      ctx.globalAlpha = a0;
+      text(st + '.'.repeat(1 + (Math.floor(S.time * 3) % 3)), tx, y, '#f0ecff', { sp: 1 });
+    } else {
+      rect(ix - 1, y + 2, 2, 2, '#323a50');
+      text(st, tx, y, '#3c4560', { sp: 1 });
     }
-    ctx.globalAlpha = a0;
-  }
-  // LOADING 64%: the label in cream, the count in yellow.
-  const pct = Math.round(clamp(p, 0, 1) * 100) + '%';
-  const lw = textW(label, 1, 2);
-  const tw = lw + 6 + textW('100%', 1, 1);
-  const tx = Math.round(W / 2 - tw / 2);
-  text(label, tx, cy + 43, PAL.cream, { sp: 2 });
-  text(pct, tx + lw + 6, cy + 43, PAL.yellow, { sp: 1 });
+  });
 }
 
 function titleLayout() {
