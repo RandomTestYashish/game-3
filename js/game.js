@@ -55,6 +55,12 @@ export class Game {
     this.rng = rng;
     this.t = 0;
     this.moveT = 0;
+    // For the analytics of a lost ball: returns and movement on this court,
+    // the last ball missed, and what it all looked like when the life went.
+    this.hits = 0;
+    this.moved = 0;
+    this.lastMiss = null;
+    this.lossInfo = null;
     this.state = 'serve'; // serve | play | won | over
     this.lives = opts.lives ?? START_LIVES;
     this.score = opts.score ?? 0;
@@ -173,7 +179,9 @@ export class Game {
 
   movePaddleTo(x) {
     const hw = this.paddle.w / 2;
+    const was = this.paddle.x;
     this.paddle.x = Math.max(hw, Math.min(WW - hw, x));
+    this.moved += Math.abs(this.paddle.x - was);
   }
 
   update(dt, axis = 0) {
@@ -299,6 +307,7 @@ export class Game {
       ball.speed = Math.min(ball.speed * SPEED_UP, this.level.speed * SPEED_CAP);
       ball.vz = 70;
       this.combo = 0;
+      this.hits++;
       this.emit('paddle', off, { x: ball.x, speed: ball.speed / this.level.speed });
       return;
     }
@@ -314,6 +323,11 @@ export class Game {
     }
 
     if (ball.y - ball.r > WH + 8) {
+      // Where it crossed the paddle's line (traced back along its path), how
+      // fast it was against the court's base speed, and where the paddle was.
+      const p = this.paddle;
+      const back = ball.vy > 0 ? (ball.y - p.y) / ball.vy : 0;
+      this.lastMiss = { x: ball.x - ball.vx * back, speed: ball.speed / this.level.speed, px: p.x, pw: p.w, balls: this.balls.filter((b) => !b.dead).length };
       ball.dead = true;
       return;
     }
@@ -482,6 +496,14 @@ export class Game {
   }
 
   loseLife() {
+    this.lossInfo = {
+      ...(this.lastMiss || {}),
+      fx: Object.keys(this.fx).filter((k) => this.fx[k] > 0),
+      hits: this.hits,
+      moved: Math.round(this.moved),
+      t: this.t,
+      left: this.total ? this.remaining / this.total : 0,
+    };
     this.lives--;
     this.lost++;
     this.combo = 0;

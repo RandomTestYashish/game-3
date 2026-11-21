@@ -103,9 +103,13 @@ function aimCam(to) {
   S.camT = 0;
 }
 
+// Screens worth counting (the play itself and the countdown are not).
+const QUIET_SCREENS = new Set(['loading', 'countdown', 'play']);
+
 function enter(name) {
   S.screen = name;
   S.t = 0;
+  if (!QUIET_SCREENS.has(name)) track('screen_viewed', { screen: name });
   if (name === 'countdown') {
     // A match counts down to the server's start time; solo is three beats.
     S.count = S.countFrom != null ? S.countFrom : BEAT * 3;
@@ -165,7 +169,7 @@ function onGameEvent(type, arg, info) {
   if (type === 'win') crowdCheer(3);
   // Analytics only while the run is live: a quit run's ball may still roll out behind the name screen.
   const live = S.run && !S.run.over && !S.mpGame;
-  if (live && (type === 'lost' || type === 'over')) track('life_lost', { court: S.level + 1, lives_left: S.game.lives, run_score: S.game.score });
+  if (live && (type === 'lost' || type === 'over')) track('life_lost', { court: S.level + 1, lives_left: S.game.lives, run_score: S.game.score, mode: S.mpGame ? 'multiplayer' : 'solo', ...lossDetails(S.game) });
   if (live && type === 'power') track('powerup_used', { powerup: arg, court: S.level + 1 });
   if (S.coach) coachEvent(type);
   if (type === 'win' || type === 'over') finish(type === 'win');
@@ -339,6 +343,38 @@ function coachText() {
   }[S.coach.step];
 }
 
+// Why a ball was lost, from what the game saw at that moment (Game.lossInfo):
+//   understanding  not one return yet on this court, or the paddle barely moved
+//   element        a power-up was running (multiball, low gravity, smash...)
+//   speed          the ball was at least 35% faster than the court's base speed
+//   miss_hit       it went past the paddle's edge by a hair
+//   space          the paddle was well out of position
+//   other          none of these
+// The raw numbers go along too, so the rules can be checked in PostHog.
+function lossDetails(g) {
+  const l = g.lossInfo || {};
+  const off = l.x != null ? Math.max(0, Math.abs(l.x - l.px) - l.pw / 2) : null; // how far past the paddle's edge
+  const widths = off != null ? off / l.pw : null;
+  let cause = 'other';
+  if (l.moved < 20 || l.hits === 0) cause = 'understanding';
+  else if (l.fx && l.fx.length) cause = 'element';
+  else if (l.speed >= 1.35) cause = 'speed';
+  else if (off != null && off <= 6) cause = 'miss_hit';
+  else if (widths != null && widths > 0.5) cause = 'space';
+  const r = (v, d = 2) => (v == null ? null : Math.round(v * 10 ** d) / 10 ** d);
+  return {
+    cause,
+    ball_speed: r(l.speed),
+    miss_distance: r(off, 1),
+    miss_widths: r(widths),
+    seconds_into_court: r(l.t, 1),
+    returns_this_court: l.hits ?? null,
+    paddle_travel: l.moved ?? null,
+    blocks_left_pct: l.left != null ? Math.round(l.left * 100) : null,
+    powerups_active: l.fx && l.fx.length ? l.fx.join(',') : 'none',
+  };
+}
+
 function startLevel(i, level, extra) {
   S.cleared = null;
   if (onlineEnabled() && !S.mpGame) loadOnline(); // fresh rows for the live place (reused for 30 s)
@@ -346,6 +382,7 @@ function startLevel(i, level, extra) {
   const lv = level || (S.mpGame ? matchLevel(S.level) : LEVELS[S.level]);
   const odds = S.mpGame ? { weights: MATCH_WEIGHTS } : {};
   S.game = new Game(lv, onGameEvent, Math.random, { lives: S.run.lives, score: S.run.score, ...odds, ...extra });
+  if (!S.coach) track('court_started', { court: S.level + 1, mode: S.mpGame ? 'multiplayer' : 'solo', lives: S.run.lives, run_score: S.run.score });
   S.ending = 0;
   if (S.screen === 'countdown') enter('countdown');
   else go('countdown');
@@ -548,10 +585,12 @@ function play() {
 }
 
 function openSound() {
+  track('screen_viewed', { screen: 'sound_panel' });
   S.overlay = S.overlayKind = 'sound';
 }
 
 function openTheme() {
+  track('screen_viewed', { screen: 'theme_panel' });
   S.overlay = S.overlayKind = 'theme';
 }
 
@@ -562,6 +601,7 @@ function shuffleTheme() {
   const pool = COUNTRIES.filter((c) => c.id !== now);
   const c = pool[Math.floor(Math.random() * pool.length)];
   chooseTheme(c.id);
+  track('theme_shuffled', { theme: c.id });
   S.themeNote = { name: c.name, title: c.title, at: S.time };
   audio.sfx('click');
 }
@@ -600,6 +640,7 @@ function musicBuild() {
 const courtTheme = () => getCourtTheme(S.level + 1, save.data.settings.theme, S.look);
 
 function openRules() {
+  track('screen_viewed', { screen: 'how_to_play' });
   S.overlay = S.overlayKind = 'rules';
 }
 
@@ -2337,6 +2378,7 @@ function startMatchGame(levelIndex, { lives, score }, broken, wait) {
   S.level = clamp(levelIndex, 0, LEVELS.length - 1);
   S.game = new Game(matchLevel(S.level), onGameEvent, Math.random, { lives, score, weights: MATCH_WEIGHTS });
   applyBroken(S.game, broken);
+  track('court_started', { court: S.level + 1, mode: 'multiplayer', lives, run_score: score });
   // Rejoining on a court already cleared (its bonus already counted): play on from the next one.
   if (S.game.remaining === 0 && S.level + 1 < LEVELS.length) {
     S.level++;
