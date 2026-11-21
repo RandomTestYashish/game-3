@@ -1093,18 +1093,12 @@ const SCREENS = {
   },
 
   intro(k) {
-    // The landing's THE RALLY card comes up into the middle, a racket keeps
-    // the ball up under it, and then the courts.
-    ctx.globalAlpha = k;
-    const L = titleLayout();
-    const cw = L.cw;
-    const x = Math.round((W - cw) / 2);
-    const y = Math.round(P.wb * 0.42);
-    const q = clamp(S.t / 0.45, 0, 1);
-    ctx.globalAlpha = k * Math.min(1, q * 2);
-    card('introcard', 'THE RALLY', null, x, y + Math.round((1 - easeBack(q)) * 24), cw, L.ch, afterIntro, { t: S.time, art: cardArt.ball });
-    ctx.globalAlpha = k * clamp((S.t - 0.35) / 0.3, 0, 1);
-    drawKeepyUppy(y + L.ch + 22, clamp((S.t - 0.3) / 2.1, 0, 1));
+    // Just the loader, big and in the middle of the sky: a racket keeping
+    // the ball up, then the courts.
+    ctx.globalAlpha = k * clamp(S.t / 0.3, 0, 1);
+    const big = 2;
+    const top = Math.max(8, Math.round(P.wb * 0.5 - 31 * big));
+    drawKeepyUppy(top, clamp((S.t - 0.2) / 2.2, 0, 1), big);
     ctx.globalAlpha = 1;
     const skip = afterIntro;
     region('skip', 0, 0, W, H, skip);
@@ -1923,7 +1917,17 @@ function drawLogo(top, wave, color = PAL.cream, shadow = '#000000') {
 
 // The loader, kept simple: a racket keeping a ball up, and a thin line
 // under it filling as p goes from 0 to 1. cy is the top of the ball's hop.
-function drawKeepyUppy(cy, p) {
+function drawKeepyUppy(cy, p, scale = 1) {
+  if (scale !== 1) {
+    // Drawn at whole-pixel scale about its top centre, so it stays crisp.
+    ctx.save();
+    ctx.translate(Math.round(W / 2), cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-Math.round(W / 2), -cy);
+    drawKeepyUppy(cy, p);
+    ctx.restore();
+    return;
+  }
   const cx = Math.round(W / 2);
   const leg = 0.62; // seconds per bounce
   const u = (S.time % leg) / leg;
@@ -1945,6 +1949,7 @@ function drawKeepyUppy(cy, p) {
   drawBall(cx, hy - 6 - Math.round(hop * 30), 4);
   // The line.
   const lw = 64;
+  rect(cx - lw / 2 - 1, hy + 21, lw + 2, 3, PAL.ink); // a dark edge, so it reads over any skyline
   rect(cx - lw / 2, hy + 22, lw, 1, '#3f5545');
   rect(cx - lw / 2, hy + 22, Math.round(lw * clamp(p, 0, 1)), 1, PAL.yellow);
 }
