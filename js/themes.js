@@ -1,9 +1,10 @@
-// Court themes: eight country environments, a Black Court surface on every
+// Court themes: twelve country environments, a Black Court surface on every
 // third court, and the player's choice between automatic rotation and one
 // fixed country. Visual only: nothing here touches the rules.
 //
-//   country  = floor((court - 1) / 2) % 8   Japan, New York, London, India,
-//                                           Paris, Cairo, Rio, Sydney
+//   country  = floor((court - 1) / 2) % 12  Japan, New York, London, India,
+//                                           Paris, Cairo, Rio, Sydney, Greece,
+//                                           China, Dubai, Switzerland
 //   black    = court % 3 === 0              independent of the country
 
 export const COUNTRIES = [
@@ -158,6 +159,81 @@ export const COUNTRIES = [
       lamp: '#FFE0A0',
     },
     ambient: { petals: null, petalRate: 0, fireflies: true },
+  },
+  {
+    id: 'santorini',
+    name: 'GREECE',
+    title: 'AEGEAN BLUE',
+    short: 'AEGEAN BLUE',
+    accent: '#4FA8E8',
+    court: { court: '#2A5E50', alt: '#357060', lines: '#F2F2E8' },
+    black: { court: '#060A10', alt: '#0E1622', lines: '#4FA8E8' },
+    bg: {
+      sky: ['#0E1C3C', '#183066', '#24508c', '#4a6aa4', '#9a7aa8', '#e4949a', '#ffc4a0'],
+      sun: { x: 50, lift: 4, r: 12, c: '#ffe8c8', band: '#ffb490', glow: '#ffd0b0' },
+      clouds: ['#203a70', '#c88aa0'],
+      hills: ['#6a5a5a', '#4a4048'],
+      trees: { dark: '#1a3a2a', hi: '#2e6044', shade: '#10281c', bush: '#1c4230', bushHi: '#285a3e' },
+      wall: { base: '#E8E6E0', top: '#FFFFFF', top2: '#f2f0ea', line: '#c4c0b8', speck: ['#dad6ce', '#cac6be'], pillar: '#f2f0ea', pillarTop: '#2a6ab0' },
+      lamp: '#FFE0A0',
+    },
+    ambient: { petals: null, petalRate: 0, fireflies: true },
+  },
+  {
+    id: 'beijing',
+    name: 'CHINA',
+    title: 'GREAT WALL',
+    short: 'GREAT WALL',
+    accent: '#E84A3A',
+    court: { court: '#355E3E', alt: '#42704A', lines: '#F0E4C8' },
+    black: { court: '#0A0808', alt: '#181010', lines: '#E84A3A' },
+    bg: {
+      sky: ['#1A1834', '#2c2248', '#4a2a54', '#7a3450', '#b84a44', '#e0704a', '#f8b070'],
+      sun: { x: -30, lift: 14, r: 12, c: '#ffd8a0', band: '#ff9a60', glow: '#ffbc80' },
+      clouds: ['#3a2a52', '#c86a5a'],
+      hills: ['#3a3450', '#2a3040'],
+      trees: { dark: '#17361f', hi: '#2c5e38', shade: '#0e2414', bush: '#1a3e24', bushHi: '#245430' },
+      wall: { base: '#8a3a30', top: '#c8a050', top2: '#a04838', line: '#6a2a24', speck: ['#94443a', '#7a3028'], pillar: '#a04838', pillarTop: '#d8b060' },
+      lamp: '#FFB060',
+    },
+    ambient: { petals: '#f0a0a8', petalsHi: '#ffd0d4', petalRate: 0.5, fireflies: true },
+  },
+  {
+    id: 'dubai',
+    name: 'DUBAI',
+    title: 'DESERT TOWERS',
+    short: 'DESERT TOWERS',
+    accent: '#E8C46A',
+    court: { court: '#2E5E48', alt: '#3A7058', lines: '#F4ECD4' },
+    black: { court: '#08080C', alt: '#12121C', lines: '#E8C46A' },
+    bg: {
+      sky: ['#0C1430', '#18245a', '#2e3478', '#6a4078', '#c45a5a', '#f08a4a', '#ffc870'],
+      sun: { x: 54, lift: 6, r: 14, c: '#fff0c0', band: '#ffc060', glow: '#ffd890' },
+      clouds: ['#26306a', '#d07a5a'],
+      hills: ['#c8945a', '#a87848'],
+      trees: { dark: '#2a4a26', hi: '#4a7a3a', shade: '#1a3018', bush: '#2e5028', bushHi: '#3f6a32' },
+      wall: { base: '#D8C8A8', top: '#F0E4C8', top2: '#e2d4b6', line: '#b0a080', speck: ['#d0c0a0', '#bcac8c'], pillar: '#e2d4b6', pillarTop: '#f4e8cc' },
+      lamp: '#FFD27A',
+    },
+    ambient: { petals: '#e8c98a', petalsHi: '#fff0c8', petalRate: 0.4, fireflies: false },
+  },
+  {
+    id: 'alps',
+    name: 'SWITZERLAND',
+    title: 'ALPINE SNOW',
+    short: 'ALPINE SNOW',
+    accent: '#A8E0F0',
+    court: { court: '#2E604A', alt: '#3A725A', lines: '#F4F4EC' },
+    black: { court: '#060A0E', alt: '#0E161E', lines: '#A8E0F0' },
+    bg: {
+      sky: ['#0E1A34', '#162a52', '#22406e', '#3c5a88', '#6a7aa0', '#b08aa4', '#f0b0a0'],
+      clouds: ['#1e3460', '#8a80a0'],
+      hills: ['#2a3a58', '#1e2c44'],
+      trees: { dark: '#0f2e22', hi: '#1e4a36', shade: '#08201a', bush: '#123628', bushHi: '#1a4834' },
+      wall: { base: '#6a5444', top: '#94786a', top2: '#7c6254', line: '#4e3c30', speck: ['#745c4c', '#5c4638'], pillar: '#7c6254', pillarTop: '#a08474' },
+      lamp: '#FFD890',
+    },
+    ambient: { petals: '#ffffff', petalsHi: '#dceaf4', petalRate: 1.0, fireflies: false },
   },
 ];
 

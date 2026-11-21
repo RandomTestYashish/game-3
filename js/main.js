@@ -1095,7 +1095,7 @@ const SCREENS = {
         }
       }
     };
-    drawTitle(PAL.cream, '#7a2420'); // cream letters on a deep red shadow
+    drawTitle(PAL.cream, '#000000'); // cream letters on a black shadow
     rect(W / 2 - 22, top + 58, 44, 1, PAL.cream);
     const sweep = (cyc - 1.5) / 1.2;
     if (sweep > 0 && sweep < 1) {
@@ -1756,7 +1756,7 @@ function themeCard(c, cx, cy, cw, ch, ph, picked, nowTag, pick) {
 }
 
 // Theme picker: Automatic, or one of the countries (two columns on a phone,
-// four on a wide screen; the cards shrink to fit the height). Picking one shows
+// four or six on wider screens; the cards shrink to fit the height). Picking one shows
 // it straight away behind the panel; the court itself carries on as it was.
 function drawThemeOverlay(k) {
   ctx.globalAlpha = 0.55 * k;
@@ -1765,9 +1765,9 @@ function drawThemeOverlay(k) {
   checker(0, 0, W, H, 'rgba(6,18,12,' + (0.35 * k).toFixed(2) + ')');
   const choice = save.data.settings.theme;
   const now = courtTheme();
-  const cols = W >= 420 ? 4 : 2;
+  const cols = W >= 640 ? 6 : W >= 420 ? 4 : 2;
   const rows = Math.ceil(COUNTRIES.length / cols);
-  const w = Math.min(W - 16, cols === 4 ? 560 : 300);
+  const w = Math.min(W - 16, { 2: 300, 4: 560, 6: 760 }[cols]);
   const cw = Math.floor((w - 24 - (cols - 1) * 6) / cols);
   const fitCh = Math.floor((H - 16 - 132) / rows) - 6; // the tallest card that still fits
   const ph = Math.round(clamp(Math.min(cw * 0.42, fitCh - 24), 18, 60));

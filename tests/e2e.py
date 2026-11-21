@@ -1099,9 +1099,9 @@ def first_time(browser, url):
 
 
 def themes(browser, url):
-    """Court themes: rotation rules, all sixteen looks, the picker, persistence."""
+    """Court themes: rotation rules, every country normal and black, the picker, persistence."""
     print("court themes")
-    COUNTRY = ["japan", "newyork", "london", "india", "paris", "cairo", "rio", "sydney"]
+    COUNTRY = ["japan", "newyork", "london", "india", "paris", "cairo", "rio", "sydney", "santorini", "beijing", "dubai", "alps"]
     url += "&look=0"  # every visit turns the rotation; these checks pin it at Japan-first
     ctx = browser.new_context(viewport={"width": 1280, "height": 800})
     ctx.add_init_script(OFFLINE + "; if(!localStorage.getItem('the-court.save')) localStorage.setItem('the-court.save', JSON.stringify({version:3,onboarded:true,progress:{unlocked:20}}))")
@@ -1120,15 +1120,15 @@ def themes(browser, url):
 
     # 1. The two rules, checked on their own and for all 120 courts.
     got = d.ev("Array.from({length:120},(_,i)=>{const t=__court.getCourtTheme(i+1);return [t.countryId,t.isBlackCourt]})")
-    want = [[COUNTRY[((n - 1) // 2) % 8], n % 3 == 0] for n in range(1, 121)]
-    check("country = floor((court-1)/2) % 8 for courts 1-120", [g[0] for g in got] == [w[0] for w in want])
+    want = [[COUNTRY[((n - 1) // 2) % 12], n % 3 == 0] for n in range(1, 121)]
+    check("country = floor((court-1)/2) % 12 for courts 1-120", [g[0] for g in got] == [w[0] for w in want])
     check("Black Court = every third court, for courts 1-120", [g[1] for g in got] == [w[1] for w in want])
     table = {1: ("japan", False), 2: ("japan", False), 3: ("newyork", True), 4: ("newyork", False), 5: ("london", False), 6: ("london", True),
              7: ("india", False), 8: ("india", False), 9: ("paris", True), 10: ("paris", False), 11: ("cairo", False), 12: ("cairo", True),
-             13: ("rio", False), 15: ("sydney", True), 16: ("sydney", False), 17: ("japan", False), 30: ("rio", True),
-             60: ("cairo", True), 90: ("paris", True), 120: ("india", True)}
+             13: ("rio", False), 15: ("sydney", True), 16: ("sydney", False), 17: ("santorini", False), 19: ("beijing", False),
+             21: ("dubai", True), 24: ("alps", True), 25: ("japan", False), 30: ("london", True), 60: ("cairo", True), 90: ("santorini", True), 120: ("alps", True)}
     bad = {n: v for n, v in table.items() if tuple(got[n - 1]) != v}
-    check("checkpoint courts 1-13,15,16,17,30,60,90,120", not bad, bad)
+    check("checkpoint courts 1-13,15-17,19,21,24,25,30,60,90,120", not bad, bad)
     manual = d.ev("[1,3,8,9].map(n=>{const t=__court.getCourtTheme(n,'india');return [t.countryId,t.isBlackCourt]})")
     check("manual choice fixes the country but keeps every third court black", manual == [["india", False], ["india", True], ["india", False], ["india", True]], manual)
     keys = d.ev("Object.keys(__court.getCourtTheme(5)).sort().join()")
@@ -1138,7 +1138,7 @@ def themes(browser, url):
     #    bottom of the screen is that theme's court colour.
     d.pg.evaluate(BOT)
     px = "(()=>{const c=document.getElementById('court');const g=c.getContext('2d');const s=__court.size();const d=g.getImageData(Math.round(s[0]/2)+18,s[1]-2,1,1).data;return '#'+[d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('')})()"
-    for court in (1, 4, 5, 7, 10, 11, 13, 16, 3, 6, 9, 12, 30, 15):
+    for court in (1, 4, 5, 7, 10, 11, 13, 16, 17, 19, 22, 23, 3, 6, 9, 12, 15, 18, 21, 24):
         d.ev(f"__bot.mode='win'; __bot.on=true; __court.S.timeScale=1; __court.beginRun({court - 1})")
         d.wait("__court.S.screen==='play' && __court.S.game.score>=20", 60000)
         d.ev("__court.S.timeScale=0.0001")

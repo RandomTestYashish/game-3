@@ -190,7 +190,8 @@ function makeLayers(id, T) {
     rect(x, HILL_H - b, 1, b, T.hills[1]);
   }
   if (id === 'india') hillFort(mid + 70, HILL_H - 26, T, rnd);
-  if (id === 'cairo') for (let x = 0; x < LW; x += 3 + Math.round(rnd() * 4)) rect(x, HILL_H - 12 - Math.round(rnd() * 8), 2, 1, '#d8a46a'); // wind ripples
+  if (id === 'beijing') greatWall(LW, rnd);
+  if (id === 'cairo' || id === 'dubai') for (let x = 0; x < LW; x += 3 + Math.round(rnd() * 4)) rect(x, HILL_H - 12 - Math.round(rnd() * 8), 2, 1, '#d8a46a'); // wind ripples
   out.hills = hills.canvas;
 
   // Landmarks, between the hills and the trees.
@@ -213,6 +214,14 @@ function makeLayers(id, T) {
     bay(LW, mid, LAND_H, rnd);
   } else if (id === 'sydney') {
     harbour(LW, mid, LAND_H, rnd);
+  } else if (id === 'santorini') {
+    santorini(mid, LAND_H, rnd);
+  } else if (id === 'beijing') {
+    templeOfHeaven(mid, LAND_H);
+  } else if (id === 'dubai') {
+    desertTowers(mid, LAND_H, rnd);
+  } else if (id === 'alps') {
+    alps(LW, mid, LAND_H, rnd);
   }
   out.land = land.canvas;
 
@@ -243,7 +252,7 @@ function makeLayers(id, T) {
   if (id === 'japan') {
     for (let x = 6; x < LW; x += 26 + rnd() * 16) if (side(x)) blossomTree(x, 96, 18 + rnd() * 8, T.blossom, rnd);
     for (let x = 8; x < LW; x += 40 + rnd() * 20) if (side(x) && rnd() < 0.5) cypress(x, 46 + rnd() * 20, 3 + rnd() * 2);
-  } else if (id === 'india' || id === 'cairo' || id === 'rio') {
+  } else if (id === 'india' || id === 'cairo' || id === 'rio' || id === 'dubai') {
     for (let x = 6; x < LW; x += 22 + rnd() * 18) if (side(x)) palm(x, 96, 40 + rnd() * 22, rnd() < 0.5 ? -1 : 1, tc);
     for (let x = 12; x < LW; x += 36) if (side(x)) bush(x + rnd() * 8, 82, 9 + rnd() * 4);
   } else if (id === 'london' || id === 'paris') {
@@ -641,6 +650,138 @@ function harbour(LW, mid, y0, rnd) {
   };
   for (const [dx, h, w] of [[-26, 18, 10], [-14, 26, 13], [0, 32, 15], [14, 22, 12], [26, 16, 9]]) sail(ox + dx, h, w, 1);
   for (let x = ox - 34; x < ox + 34; x += 3) rect(x, y0 - 10, 1, 2, '#ffd98a');
+}
+
+// Greece: white cube houses stacked up a dark cliff, blue domes, a windmill.
+function santorini(mid, y0, rnd) {
+  for (let i = 0; i < 40; i++) {
+    const t = i / 40;
+    const half = Math.round(120 * (1 - t * 0.55));
+    rect(mid - half, y0 - i, half * 2, 1, i % 5 ? '#5a4a4c' : '#4a3c40'); // the cliff
+  }
+  for (let row = 0; row < 5; row++) {
+    const y = y0 - 8 - row * 8;
+    const half = 110 - row * 14;
+    for (let x = mid - half; x < mid + half - 8; x += 9 + Math.round(rnd() * 5)) {
+      if (rnd() < 0.2) continue;
+      const w = 7 + Math.round(rnd() * 4);
+      rect(x, y - 7, w, 7, '#f4f2ec');
+      rect(x, y - 7, w, 1, '#ffffff');
+      rect(x + w - 1, y - 6, 1, 6, '#c8c4bc');
+      if (rnd() < 0.6) rect(x + 2, y - 5, 2, 3, rnd() < 0.5 ? '#ffd88a' : '#2a6ab0');
+    }
+  }
+  for (const [dx, dy] of [[-40, 36], [12, 44], [58, 28]]) {
+    const cx = mid + dx;
+    rect(cx - 5, y0 - dy, 11, 8, '#f4f2ec');
+    for (let i = 0; i < 5; i++) {
+      const half = Math.round(Math.sin(((i + 1) / 6) * Math.PI * 0.5) * 5);
+      rect(cx - half, y0 - dy - 5 + i, half * 2 + 1, 1, i < 1 ? '#5a9ae0' : '#2a6ab0');
+    }
+    rect(cx, y0 - dy - 8, 1, 3, '#f4f2ec');
+  }
+  const wx = mid + 96;
+  rect(wx - 3, y0 - 54, 7, 16, '#f4f2ec'); // windmill
+  rect(wx - 4, y0 - 56, 9, 2, '#6a4a3a');
+  line(wx - 9, y0 - 61, wx + 9, y0 - 49, '#d8d4cc');
+  line(wx - 9, y0 - 49, wx + 9, y0 - 61, '#d8d4cc');
+}
+
+// China: the wall running over the far ridges, its watchtowers on the crests.
+function greatWall(LW, rnd) {
+  for (let x = 0; x < LW; x++) {
+    const y = Math.round(HILL_H - 22 + Math.sin(x * 0.035 + 1) * 6 + Math.sin(x * 0.09) * 3 - 6);
+    rect(x, y - 2, 1, 3, '#7a6a5a');
+    if (x % 3 === 0) rect(x, y - 3, 1, 1, '#8a7a68');
+    if (x % 46 === 20) {
+      rect(x - 3, y - 7, 7, 6, '#7a6a5a');
+      rect(x - 1, y - 5, 2, 2, rnd() < 0.5 ? '#ffb060' : '#3a3040');
+    }
+  }
+}
+
+// China: the round, three-tier blue-roofed hall on its white terraces.
+function templeOfHeaven(mid, y0) {
+  for (let k = 0; k < 3; k++) rect(mid - 46 + k * 8, y0 - 4 - k * 4, 92 - k * 16, 4, k % 2 ? '#d8d4c8' : '#ece8dc');
+  const base = y0 - 16;
+  const tiers = [[26, 9], [20, 8], [13, 8]];
+  let y = base;
+  for (const [hw, h] of tiers) {
+    rect(mid - hw + 4, y - h + 2, (hw - 4) * 2, h - 2, '#a8302a'); // red columns
+    for (let x = mid - hw + 6; x < mid + hw - 4; x += 4) rect(x, y - h + 3, 1, h - 3, '#7a1e1a');
+    y -= h;
+    trap(y - 5, mid - hw + 6, mid + hw - 6, y + 1, mid - hw - 2, mid + hw + 2, '#1e4a8a'); // blue tiled roof
+    rect(mid - hw - 2, y, (hw + 2) * 2, 1, '#c8a050');
+    y -= 4;
+  }
+  rect(mid - 1, y - 6, 3, 6, '#c8a050');
+  disc(mid, y - 7, 2, '#e8c060');
+  for (const cx of [mid - 80, mid + 80]) {
+    rect(cx - 14, y0 - 16, 28, 16, '#a8302a');
+    trap(y0 - 22, cx - 12, cx + 12, y0 - 15, cx - 18, cx + 18, '#2a3a5a');
+    rect(cx - 3, y0 - 10, 6, 10, '#3a1410'); // the gate
+  }
+}
+
+// Dubai: a needle-thin supertall tower, a sail-shaped hotel and a low skyline.
+function desertTowers(mid, y0, rnd) {
+  for (let x = mid - 130; x < mid + 130; ) {
+    const w = 7 + Math.round(rnd() * 9);
+    const h = 14 + Math.round(rnd() * 22);
+    rect(x, y0 - h, w, h, '#1c2234');
+    for (let wy = y0 - h + 3; wy < y0 - 3; wy += 4) for (let wx = x + 2; wx < x + w - 1; wx += 3) if (rnd() < 0.3) rect(wx, wy, 1, 2, '#ffd27a');
+    x += w + 2;
+  }
+  const tx = mid - 20;
+  const tiers = [[7, 20], [6, 18], [5, 16], [4, 14], [3, 10], [2, 8]];
+  let y = y0;
+  for (const [hw, h] of tiers) {
+    rect(tx - hw, y - h, hw * 2 + 1, h, '#5a6a84');
+    rect(tx - hw, y - h, 1, h, '#8a9ab4');
+    for (let k = y - h + 2; k < y; k += 3) rect(tx - hw + 2, k, 1, 1, '#ffe0a0');
+    y -= h;
+  }
+  rect(tx, y - 14, 1, 14, '#8a9ab4');
+  rect(tx, y - 15, 1, 1, '#ff6a5a'); // the beacon
+  const sx = mid + 64;
+  for (let i = 0; i < 46; i++) {
+    const t = i / 46;
+    const w = Math.round(16 * Math.sin((1 - t) * Math.PI * 0.55));
+    rect(sx, y0 - i, w, 1, '#e8eef4');
+    rect(sx + w, y0 - i, 1, 1, '#b8c4d0');
+  }
+  rect(sx - 2, y0 - 50, 2, 50, '#8a9ab4'); // the mast
+  rect(sx - 8, y0 - 38, 6, 2, '#8a9ab4'); // helipad
+}
+
+// Switzerland: snow-capped peaks, pine slopes and a few lit chalets.
+function alps(LW, mid, y0, rnd) {
+  const peak = (cx, h, w) => {
+    for (let i = 0; i < h; i++) {
+      const half = Math.round((i / h) * w);
+      const y = y0 - h + i;
+      rect(cx - half, y, half, 1, '#4a5a7a');
+      rect(cx, y, half + 1, 1, '#36445e');
+      if (i < h * 0.32 + ((cx + i) % 4)) {
+        rect(cx - half, y, half, 1, '#f4f8ff');
+        rect(cx, y, half + 1, 1, '#c8d4e8');
+      }
+    }
+  };
+  peak(mid - 70, 66, 48);
+  peak(mid + 50, 80, 56);
+  peak(mid + 120, 52, 40);
+  peak(mid - 140, 48, 38);
+  for (let x = 0; x < LW; x += 4) {
+    const h = 6 + Math.round(rnd() * 8);
+    trap(y0 - h, x + 1, x + 2, y0, x - 1, x + 4, '#16382a'); // pines
+  }
+  for (const cx of [mid - 96, mid - 20, mid + 84]) {
+    rect(cx - 6, y0 - 10, 13, 8, '#6a4430');
+    trap(y0 - 15, cx, cx + 1, y0 - 9, cx - 9, cx + 10, '#f4f8ff');
+    rect(cx - 2, y0 - 8, 2, 2, '#ffd890');
+    rect(cx + 2, y0 - 8, 2, 2, '#ffd890');
+  }
 }
 
 function hillFort(cx, y, T, rnd) {
@@ -1130,9 +1271,9 @@ const LAMP_STYLES = {
   },
 };
 
-// The newer countries borrow the nearest lamp: Paris and Sydney the Victorian
-// lamp, Cairo the brass lantern, Rio the city crook.
-const LAMP_LIKE = { paris: 'london', sydney: 'london', cairo: 'india', rio: 'newyork' };
+// The newer countries borrow the nearest lamp: the Victorian lamp, the brass
+// lantern, the city crook, or (China) the red paper lantern.
+const LAMP_LIKE = { paris: 'london', sydney: 'london', cairo: 'india', rio: 'newyork', santorini: 'london', beijing: 'japan', dubai: 'newyork', alps: 'london' };
 
 // The banner's logos, THE COURT (a tennis ball) and COURT BITES (a burger and
 // a drink), in 12-bit colour (4 bits per channel, written as 3-digit hex),

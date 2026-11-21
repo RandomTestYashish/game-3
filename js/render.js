@@ -2,6 +2,10 @@
 
 import { W, ctx, PAL, rect, disc, ring, rrect, text, textW, serif, serifW, icon } from './gfx.js';
 import { proj, drawBlock, drawBall, drawPaddle, drawShadow, MAT } from './scene.js';
+
+// A ball's radius and its resting hop height (js/game.js), for placing the bar.
+const BALL_REST_R = 4;
+const BALL_REST_Z = 5;
 import { WW, WH, TOOL_TIME, START_LIVES, comboMult } from './game.js';
 
 export function drawGame(g, time) {
@@ -89,8 +93,14 @@ export function drawGame(g, time) {
       }
       drawBall(g0.x, g0.y - ball.z * g0.s - r, r, hot);
     } else if (it.paddle) {
-      const p = proj(it.paddle.x, it.paddle.y + it.paddle.d / 2);
-      drawPaddle(p.x, p.y, (it.paddle.w / 2) * p.s, g.fx.expand > 0);
+      // Drawn where the ball meets it: the bar's top sits right under a ball
+      // resting at its usual hop height on the bounce line (the bar's back
+      // edge), so a return visibly touches. Only the picture moves; the
+      // bounce itself is unchanged.
+      const it2 = it.paddle;
+      const p = proj(it2.x, it2.y - it2.d / 2 - BALL_REST_R);
+      const y = p.y - BALL_REST_Z * p.s + 11;
+      drawPaddle(p.x, y, (it2.w / 2) * proj(it2.x, it2.y + it2.d / 2).s, g.fx.expand > 0);
     }
   }
 
