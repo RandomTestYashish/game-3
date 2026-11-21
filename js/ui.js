@@ -241,9 +241,25 @@ export function ghost(id, label, cx, y, w, h, fn, o = {}) {
   rrect(x, y, w, h, 4, down(id) ? PAL.panelHi : o.fill || PAL.panel);
   const ink = on && !o.fill ? PAL.yellow : o.color || PAL.cream;
   if (o.icon) {
-    // Icon on the left, label after it.
-    icon(o.icon, x + 4, y + Math.round((h - 11) / 2), ink);
-    text(label, x + 17 + Math.round((w - 20 - textW(label, 1, o.sp ?? 1)) / 2), y + Math.round((h - 7) / 2), ink, { sp: o.sp ?? 1 });
+    // A small icon and the label, centred together. When the button is
+    // narrow the letters close up, and only if even that won't fit does the
+    // icon step aside.
+    let sp = o.sp ?? 1;
+    let tw = textW(label, 1, sp);
+    const iw = K > 1 ? 8 : 11;
+    const gap = 3;
+    const room = w - 6;
+    if (iw + gap + tw > room) {
+      sp = 0;
+      tw = textW(label, 1, 0);
+    }
+    const withIcon = iw + gap + tw <= room;
+    let gx = x + Math.round((w - (withIcon ? iw + gap : 0) - tw) / 2);
+    if (withIcon) {
+      icon(o.icon, gx, y + Math.round((h - iw) / 2), ink, iw / 11);
+      gx += iw + gap;
+    }
+    text(label, gx, y + Math.round((h - 7) / 2), ink, { sp });
   } else {
     text(label, cx, y + Math.round((h - 7) / 2), ink, { align: 'center', sp: o.sp ?? 1 });
   }
