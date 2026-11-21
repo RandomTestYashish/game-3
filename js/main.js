@@ -866,47 +866,6 @@ function drawPyramid(vis) {
   }
 }
 
-// The ball rallying between two rackets under the title: an arc each way,
-// a trail behind it, a hit sound and a spray of sparks on each racket.
-function drawIntroRally(t, k, cy) {
-  const reach = Math.min(70, W / 2 - 30);
-  const lx = W / 2 - reach;
-  const rx = W / 2 + reach;
-  const leg = 0.55; // seconds from one racket to the other
-  const i = Math.floor(t / leg);
-  const u = (t % leg) / leg;
-  const from = i % 2 ? rx : lx;
-  const to = i % 2 ? lx : rx;
-  const at = (v) => ({ x: lerp(from, to, v) + (to > from ? -8 : 8) * (1 - 2 * v), y: cy - 4 - Math.sin(v * Math.PI) * 26 });
-  if (i !== S.introHit) {
-    S.introHit = i;
-    if (i > 0) audio.sfx('paddle');
-  }
-  ctx.globalAlpha = k;
-  racket(lx - 6, cy, 1);
-  racket(rx + 6, cy, -1);
-  // The trail, then the ball and its shadow on the grass.
-  for (let v = Math.max(0, u - 0.35); v < u; v += 0.05) {
-    const p = at(v);
-    ctx.globalAlpha = k * (0.2 + 0.7 * (1 - (u - v) / 0.35));
-    rect(p.x, p.y, 2, 2, PAL.yellow);
-  }
-  ctx.globalAlpha = k;
-  const p = at(u);
-  drawShadow(p.x, cy + 10, 4, 1, 0.3);
-  drawBall(p.x, p.y, 4);
-  // Sparks just after each hit.
-  if (u < 0.25 && i > 0) {
-    const hx = from + (from < W / 2 ? 2 : -2);
-    for (let s = 0; s < 6; s++) {
-      const a = (s / 6) * Math.PI * 2;
-      const r = 3 + u * 40;
-      ctx.globalAlpha = k * (1 - u * 4);
-      rect(hx + Math.cos(a) * r, cy - 4 + Math.sin(a) * r, 1, 1, s % 2 ? '#ffffff' : PAL.yellow);
-    }
-  }
-  ctx.globalAlpha = 1;
-}
 
 // Leaderboard with nothing on it: a cup in a burst of light, laurels and rackets.
 // The leaderboard's podium: the top three on numbered blocks (2, 1, 3 from
@@ -1048,51 +1007,30 @@ const LOADING_TIPS = [
 const SCREENS = {
   ...MP_SCREENS,
   loading(k) {
-    // A pixel bar that fills while the game gets ready (it only reaches the
-    // end once the save is read and the court is built), and a tip to read.
-    const cy = Math.round(P.wb + (H - P.wb) * 0.36);
+    // The landing's own logo in the landing's place (so the landing simply
+    // grows its cards under it), a bar that fills while the game gets ready
+    // (it only reaches the end once the save is read and the court is built)
+    // with a ball rolling along it, and a tip to read.
     ctx.globalAlpha = k;
-    text('PREPARING THE COURT', W / 2 + 2, cy, PAL.white, { align: 'center', sp: 2, shadow: PAL.ink });
-    const bw = Math.min(150, W - 60);
-    const bx = Math.round(W / 2 - bw / 2);
+    const top = titleTop();
+    drawLogo(top, false);
+    rect(W / 2 - 22, top + 58, 44, 1, PAL.cream);
     const p = S.ready ? clamp(S.t / 1.2, 0, 1) : clamp(S.t / 1.2, 0, 0.85);
-    rrect(bx - 2, cy + 14, bw + 4, 11, 4, PAL.ink);
-    rrect(bx - 1, cy + 15, bw + 2, 9, 3, '#5f7a64');
-    rect(bx, cy + 16, bw, 7, '#0d1f16');
-    const fill = Math.round(bw * p);
-    rect(bx, cy + 16, fill, 7, PAL.yellow);
-    rect(bx, cy + 16, fill, 1, PAL.yellowHi);
-    for (let gx = bx + 4; gx < bx + fill; gx += 6) rect(gx, cy + 17, 2, 5, PAL.yellowLo); // segments
+    const cy = Math.max(top + 84, titleLayout().a.y + 6);
+    drawLoadBar(cy, p);
     const tip = LOADING_TIPS[S.tip % LOADING_TIPS.length];
-    wrap(tip, Math.min(200, W - 24)).forEach((l, i) => text(l, W / 2, cy + 36 + i * 10, PAL.cream, { align: 'center', shadow: PAL.ink }));
+    wrap(tip, Math.min(200, W - 24)).forEach((l, i) => text(l, W / 2, cy + 24 + i * 10, PAL.cream, { align: 'center', shadow: PAL.ink }));
     ctx.globalAlpha = 1;
   },
 
   title(k) {
     const wb = P.wb;
-    const top = Math.max(Math.round(wb * 0.16), Math.min(Math.round(H * 0.24), wb - 176)) - Math.round((1 - k) * 10);
+    const top = titleTop() - Math.round((1 - k) * 10);
     ctx.globalAlpha = k;
     // Title idle loop, every 4.5s: a wave lifts the letters one after another,
     // then a glint sweeps across them and along the underline.
     const cyc = S.time % 4.5;
-    const words = [
-      { str: 'THE', x: W / 2 + 3, y: top, size: 15, sp: 5, lift: 1 },
-      { str: 'COURT', x: W / 2 + 2, y: top + 20, size: 40, sp: 3, lift: 3 },
-    ];
-    const drawTitle = (color, shadow) => {
-      let n = 0;
-      for (const wd of words) {
-        let x = Math.round(wd.x - serifW(wd.str, wd.size, wd.sp) / 2);
-        for (const ch of wd.str) {
-          const ph = (cyc - n * 0.11) / 0.45; // each letter starts a beat after the last
-          const up = ph > 0 && ph < 1 ? Math.round(Math.sin(ph * Math.PI) * wd.lift) : 0;
-          serif(ch, x, wd.y - up, wd.size, color, { shadow });
-          x += serifW(ch, wd.size) + wd.sp;
-          n++;
-        }
-      }
-    };
-    drawTitle(PAL.cream, '#000000'); // cream letters on a black shadow
+    drawLogo(top, true);
     rect(W / 2 - 22, top + 58, 44, 1, PAL.cream);
     const sweep = (cyc - 1.5) / 1.2;
     if (sweep > 0 && sweep < 1) {
@@ -1106,7 +1044,7 @@ const SCREENS = {
         if (r & 1) ctx.rect(rx + 8, top - 6 + r, 2, 1);
       }
       ctx.clip();
-      drawTitle('#ffffff', null);
+      drawLogo(top, true, '#ffffff', null);
       ctx.restore();
       rect(W / 2 - 22 + Math.round(sweep * 40), top + 58, 4, 1, '#ffffff');
     }
@@ -1144,29 +1082,25 @@ const SCREENS = {
   },
 
   intro(k) {
-    // ELEVATED / RALLY: the letters drop in one by one with a little bounce,
-    // then a line draws under them, while a ball rallies between two rackets.
+    // The landing's THE RALLY card comes up into the middle, GET READY counts
+    // its dots, and the loading bar fills before the courts.
     ctx.globalAlpha = k;
+    const L = titleLayout();
+    const cw = L.cw;
+    const x = Math.round((W - cw) / 2);
     const y = Math.round(P.wb * 0.42);
-    let n = 0;
-    for (const [word, wy] of [['ELEVATED', y], ['RALLY', y + 20]]) {
-      const ww = serifW(word, 15, 3);
-      let x = W / 2 - ww / 2;
-      for (const ch of word) {
-        const q = clamp((S.t - 0.1 - n * 0.06) / 0.3, 0, 1);
-        n++;
-        if (q > 0) {
-          ctx.globalAlpha = k * Math.min(1, q * 2);
-          serif(ch, x, wy - Math.round((1 - easeBack(q)) * 14), 15, PAL.cream, { sp: 3, shadow: PAL.ink });
-        }
-        x += serifW(ch, 15, 0) + 3;
-      }
-    }
-    ctx.globalAlpha = k;
-    const line = clamp((S.t - 0.9) / 0.4, 0, 1);
-    rect(Math.round(W / 2 - 20 * line), y + 40, Math.round(40 * line), 1, PAL.yellow);
+    const q = clamp(S.t / 0.45, 0, 1);
+    ctx.globalAlpha = k * Math.min(1, q * 2);
+    card('introcard', 'THE RALLY', null, x, y + Math.round((1 - easeBack(q)) * 24), cw, L.ch, afterIntro, { t: S.time, art: cardArt.ball });
+    const fade = k * clamp((S.t - 0.35) / 0.3, 0, 1);
+    const pw = Math.min(150, W - 60) + 28;
+    ctx.globalAlpha = fade * 0.82; // a dark plate, so the words read over any skyline
+    rrect(Math.round(W / 2 - pw / 2), y + L.ch + 14, pw, 46, 6, '#06120c');
+    ctx.globalAlpha = fade;
+    const dots = '.'.repeat(Math.floor(S.time * 3) % 4);
+    text('GET READY' + dots, W / 2 - textW('GET READY...', 1, 2) / 2, y + L.ch + 22, PAL.cream, { sp: 2, shadow: PAL.ink });
+    drawLoadBar(y + L.ch + 46, clamp((S.t - 0.3) / 2.1, 0, 1));
     ctx.globalAlpha = 1;
-    drawIntroRally(S.t, k, y + 74);
     const skip = afterIntro;
     region('skip', 0, 0, W, H, skip);
     S.primary = skip;
@@ -1958,6 +1892,47 @@ function sigBox() {
 
 // The landing screen's cards and button row, fitted between the horizon and
 // the signature: stacked on narrow screens, side by side on wide ones.
+// Where THE COURT sits on the landing (and on the loader, in the same place).
+const titleTop = () => Math.max(Math.round(P.wb * 0.16), Math.min(Math.round(H * 0.24), P.wb - 176));
+
+// THE COURT: cream serif letters on a black shadow. wave lifts the letters
+// one after another every 4.5 s (the landing's idle loop).
+function drawLogo(top, wave, color = PAL.cream, shadow = '#000000') {
+  const cyc = S.time % 4.5;
+  const words = [
+    { str: 'THE', x: W / 2 + 3, y: top, size: 15, sp: 5, lift: 1 },
+    { str: 'COURT', x: W / 2 + 2, y: top + 20, size: 40, sp: 3, lift: 3 },
+  ];
+  let n = 0;
+  for (const wd of words) {
+    let x = Math.round(wd.x - serifW(wd.str, wd.size, wd.sp) / 2);
+    for (const ch of wd.str) {
+      const ph = (cyc - n * 0.11) / 0.45; // each letter starts a beat after the last
+      const up = wave && ph > 0 && ph < 1 ? Math.round(Math.sin(ph * Math.PI) * wd.lift) : 0;
+      serif(ch, x, wd.y - up, wd.size, color, { shadow });
+      x += serifW(ch, wd.size) + wd.sp;
+      n++;
+    }
+  }
+}
+
+// The loading bar (p from 0 to 1), with the ball rolling along its end.
+function drawLoadBar(cy, p) {
+  const bw = Math.min(150, W - 60);
+  const bx = Math.round(W / 2 - bw / 2);
+  rrect(bx - 2, cy - 2, bw + 4, 11, 4, PAL.ink);
+  rrect(bx - 1, cy - 1, bw + 2, 9, 3, '#5f7a64');
+  rect(bx, cy, bw, 7, '#0d1f16');
+  const fill = Math.round(bw * p);
+  rect(bx, cy, fill, 7, PAL.yellow);
+  rect(bx, cy, fill, 1, PAL.yellowHi);
+  for (let gx = bx + 4; gx < bx + fill - 4; gx += 6) rect(gx, cy + 1, 2, 5, PAL.yellowLo); // segments
+  const bxp = clamp(bx + fill, bx + 5, bx + bw - 5);
+  const hop = Math.round(Math.abs(Math.sin(S.time * 7)) * 2);
+  drawShadow(bxp, cy + 4, 4, 1, 0.35);
+  drawBall(bxp, cy - 3 - hop, 5);
+}
+
 function titleLayout() {
   const wide = W >= 400;
   const tall = H >= 440;
