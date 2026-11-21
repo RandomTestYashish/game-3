@@ -1759,6 +1759,10 @@ export function drawBlock(xl, xr, yn, xlf, xrf, yf, h, hf, type, seed, o = {}) {
   // out from the near-black surface; every brick also gets a pale rim.
   const night = !!(theme && theme.isBlackCourt);
   const m = night && type === 'S' ? NIGHT_SLATE : MAT[type];
+  if ((ctx.__k || 1) > 1) {
+    drawBlockHD(xl, xr, yn, xlf, xrf, yf, h, hf, type, seed, o, m, night);
+    return;
+  }
   xl = Math.round(xl);
   xr = Math.round(xr);
   yn = Math.round(yn);
@@ -1837,6 +1841,147 @@ export function drawBlock(xl, xr, yn, xlf, xrf, yf, h, hf, type, seed, o = {}) {
     trap(topF, xlf, xrf, topN, xl, xr, '#ffffff');
     rect(xl, topN, w, h, '#ffffff');
     ctx.globalAlpha = 1;
+  }
+}
+
+// A brick in HD: the same cuboid at its exact (unsnapped) corners, a front
+// that darkens toward the ground, fine bevels, and a texture for each
+// material: grain on clay (T), pits on stone (L), leaves on hedge (H),
+// strata on slate (S). Cracks are drawn as lines, ice as a glossy sheet.
+function drawBlockHD(xl, xr, yn, xlf, xrf, yf, h, hf, type, seed, o, m, night) {
+  h = Math.max(2, h);
+  const w = xr - xl;
+  if (w < 2) return;
+  const topN = yn - h;
+  const topF = Math.min(topN - 2, yf - hf);
+  const th = topN - topF;
+  const c = ctx;
+  const a0 = c.globalAlpha;
+  const top = () => {
+    c.beginPath();
+    c.moveTo(xlf, topF);
+    c.lineTo(xrf, topF);
+    c.lineTo(xr, topN);
+    c.lineTo(xl, topN);
+    c.closePath();
+  };
+  // Top face, front face (softened corners), and their shading.
+  top();
+  c.fillStyle = m.top;
+  c.fill();
+  c.beginPath();
+  c.roundRect(xl, topN, w, h, [0, 0, 0.8, 0.8]);
+  c.fillStyle = m.front;
+  c.fill();
+  c.globalAlpha = a0 * 0.22;
+  c.fillStyle = m.lo;
+  c.fillRect(xl, topN + h * 0.55, w, h * 0.45); // darker toward the ground
+  c.fillRect(xr - Math.min(2, w * 0.12), topN, Math.min(2, w * 0.12), h); // the shaded right side
+  c.globalAlpha = a0;
+  // Bevels: a lit far edge, a lit front lip, a dark foot.
+  c.fillStyle = m.hi;
+  c.beginPath();
+  c.moveTo(xlf, topF);
+  c.lineTo(xrf, topF);
+  c.lineTo(xrf - 0.3, topF + 0.7);
+  c.lineTo(xlf + 0.3, topF + 0.7);
+  c.fill();
+  c.fillRect(xl, topN, w, 0.7);
+  c.fillStyle = m.lo;
+  c.fillRect(xl + 0.6, yn - 0.6, w - 1.2, 0.6);
+  // Texture.
+  const rnd = mulberry(seed);
+  const area = Math.min(1, (w * h) / 200);
+  const onTop = (u, v) => {
+    const y = topF + 1 + v * (th - 1.5);
+    const t = th > 1 ? (y - topF) / th : 1;
+    return [lerp(lerp(xlf, xl, t) + 0.8, lerp(xrf, xr, t) - 1.2, u), y];
+  };
+  const onFront = (u, v) => [xl + 1 + u * (w - 2.6), topN + 1.2 + v * (h - 2.6)];
+  if (type === 'H') {
+    // Leaves: small dots in three greens, thick on top, sparser on the front.
+    const n = Math.round(46 * area);
+    for (let i = 0; i < n; i++) {
+      const front = rnd() < 0.35;
+      const [x, y] = front ? onFront(rnd(), rnd()) : onTop(rnd(), rnd());
+      const r = rnd();
+      c.fillStyle = r < 0.4 ? m.hi : r < 0.75 ? m.front : '#4f9444';
+      const sz = 0.5 + rnd() * 0.5;
+      c.fillRect(x, y, sz, sz * 0.8);
+    }
+  } else if (type === 'S') {
+    // Slate: a few faint strata across the front.
+    c.globalAlpha = a0 * 0.35;
+    c.fillStyle = m.hi;
+    for (let i = 0; i < 2; i++) c.fillRect(xl + 1, topN + h * (0.35 + i * 0.3) + rnd(), w - 2.5, 0.35);
+    c.globalAlpha = a0;
+  } else {
+    // Clay grain or stone pits: fine specks, light and dark.
+    const n = Math.round((type === 'T' ? 18 : 12) * area);
+    for (let i = 0; i < n; i++) {
+      const front = rnd() < 0.55;
+      const [x, y] = front ? onFront(rnd(), rnd()) : onTop(rnd(), rnd());
+      const dark = rnd() < 0.55;
+      c.fillStyle = dark ? (front ? m.lo : m.front) : m.hi;
+      c.globalAlpha = a0 * (0.55 + rnd() * 0.45);
+      const sz = type === 'L' ? 0.55 : 0.4 + rnd() * 0.5;
+      c.fillRect(x, y, sz * (type === 'T' ? 1.6 : 1), sz);
+    }
+    c.globalAlpha = a0;
+  }
+  if (night) {
+    c.globalAlpha = a0 * 0.55;
+    c.fillStyle = '#a8b2bf';
+    c.fillRect(xl, topN, 0.5, h);
+    c.fillRect(xr - 0.5, topN, 0.5, h);
+    c.fillStyle = '#c9d2dc';
+    c.fillRect(xlf, topF - 0.5, xrf - xlf, 0.5);
+    c.globalAlpha = a0;
+  }
+  if (o.damage > 0) {
+    // Cracks: jagged lines down the front from the top edge.
+    const crack = mulberry(seed ^ 0x9e3779b9);
+    const count = Math.round(o.damage * 3);
+    c.strokeStyle = m.lo;
+    c.lineWidth = 0.55;
+    c.lineJoin = 'round';
+    for (let k = 0; k < count; k++) {
+      let x = xl + 3 + crack() * (w - 6);
+      c.beginPath();
+      c.moveTo(x, topN - 1.5);
+      for (let y = topN - 1; y < yn - 1; y += 1.2) {
+        x = Math.max(xl + 1, Math.min(xr - 2, x + (crack() - 0.5) * 1.6));
+        c.lineTo(x, y);
+        if (crack() < 0.12) break;
+      }
+      c.stroke();
+    }
+  }
+  if (o.frozen) {
+    // A sheet of ice: a pale glaze with glints.
+    c.globalAlpha = a0 * 0.42;
+    c.fillStyle = PAL.ice;
+    top();
+    c.fill();
+    c.fillRect(xl, topN, w, h);
+    c.globalAlpha = a0 * 0.9;
+    c.fillStyle = '#ffffff';
+    c.beginPath();
+    c.moveTo(xl + 1.5, topN + h - 1.5);
+    c.lineTo(xl + 4.5, topN + 1.2);
+    c.lineTo(xl + 5.5, topN + 1.2);
+    c.lineTo(xl + 2.5, topN + h - 1.5);
+    c.fill();
+    c.fillRect(xr - 4, topN + 1.2, 1.5, 0.5);
+    c.globalAlpha = a0;
+  }
+  if (o.flash > 0) {
+    c.globalAlpha = a0 * Math.min(0.8, o.flash * 6);
+    c.fillStyle = '#ffffff';
+    top();
+    c.fill();
+    c.fillRect(xl, topN, w, h);
+    c.globalAlpha = a0;
   }
 }
 
