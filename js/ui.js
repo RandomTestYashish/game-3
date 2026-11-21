@@ -1,7 +1,7 @@
 // Immediate-mode widgets. Screens call these every frame; each widget paints
 // itself and registers a hit region that the pointer handlers consult.
 
-import { W, H, ctx, PAL, makeLayer, setTarget, rect, rrect, disc, ring, text, textW, icon, sparkle, clamp, mulberry } from './gfx.js';
+import { W, H, K, ctx, PAL, makeLayer, makeScreenLayer, setTarget, rect, rrect, disc, ring, text, textW, icon, sparkle, clamp, mulberry } from './gfx.js';
 
 export const ui = {
   regions: [],
@@ -321,7 +321,7 @@ export function panel(k, x, y, w, h, style, draw) {
   const wasLive = ui.live;
   if (!full) {
     if (k <= 0.01) return;
-    if (!off || off.canvas.height !== H || off.canvas.width !== W) off = makeLayer(W, H);
+    if (!off || off.canvas.height !== H * K || off.canvas.width !== W * K) off = makeScreenLayer();
     off.clearRect(0, 0, W, H);
     setTarget(off);
     ui.live = false;
@@ -344,7 +344,7 @@ export function panel(k, x, y, w, h, style, draw) {
     const t = i / dH;
     const ws = 1 - (1 - k) * 0.34 * (1 - t);
     const dw = Math.round(sw * ws);
-    ctx.drawImage(off.canvas, sx, sTop + Math.floor((i * sH) / dH), sw, 1, Math.round(cx - dw / 2), dTop + i, dw, 1);
+    ctx.drawImage(off.canvas, sx * K, (sTop + Math.floor((i * sH) / dH)) * K, sw * K, K, Math.round(cx - dw / 2), dTop + i, dw, 1);
   }
   ctx.globalAlpha = 1;
 }

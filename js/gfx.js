@@ -1,7 +1,15 @@
 // Low-resolution pixel canvas, drawing primitives, bitmap font and icon sprites.
+//
+// HD rendering: everything is laid out in logical pixels (W x H, about 240 x
+// 520), but the screen canvas has K device pixels per logical pixel (K = 1..3,
+// matched to the display). Shapes (discs, ellipses, lines, trapezoids, rounded
+// boxes) and the serif type are drawn at full device resolution, so they come
+// out smooth; the bitmap font, icons and the painted background layers keep
+// their pixel-art blocks. Off-screen layers carry their own scale (ctx.__k).
 
 export let W = 240;
 export let H = 270;
+export let K = 1; // device pixels per logical pixel on the screen canvas
 export let ctx = null;
 
 let main = null;
@@ -13,15 +21,32 @@ export function initCanvas(canvas) {
   canvas.height = H;
   main = canvas.getContext('2d', { alpha: false });
   main.imageSmoothingEnabled = false;
+  main.__k = 1;
   ctx = main;
 }
 
-export function setSize(w, h) {
+export function setSize(w, h, k = K) {
   W = w;
   H = h;
-  canvasEl.width = w;
-  canvasEl.height = h;
+  K = k;
+  canvasEl.width = w * k;
+  canvasEl.height = h * k;
   main.imageSmoothingEnabled = false;
+  main.__k = k;
+  main.setTransform(k, 0, 0, k, 0, 0);
+}
+
+// Put the screen canvas back to logical units (plus a sideways nudge, for shake).
+export function resetTransform(dx = 0) {
+  ctx.setTransform(K, 0, 0, K, dx * K, 0);
+}
+
+// A screen-sized off-screen layer at the screen's resolution.
+export function makeScreenLayer() {
+  const x = makeLayer(W * K, H * K);
+  x.setTransform(K, 0, 0, K, 0, 0);
+  x.__k = K;
+  return x;
 }
 
 export function setTarget(c) {
@@ -34,6 +59,7 @@ export function makeLayer(w, h) {
   c.height = h;
   const x = c.getContext('2d');
   x.imageSmoothingEnabled = false;
+  x.__k = 1;
   return x;
 }
 
@@ -82,12 +108,45 @@ export const bayer = (x, y) => (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
 
 // ---------------------------------------------------------------- primitives
 
+// The current target's device pixels per logical pixel, and snapping to them.
+const kNow = () => ctx.__k || 1;
+const snap = (v, k) => Math.round(v * k) / k;
+
 export function rect(x, y, w, h, c) {
   ctx.fillStyle = c;
-  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  const k = kNow();
+  if (k === 1) {
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    return;
+  }
+  // Same size as ever (whole logical pixels), placed to the device pixel.
+  ctx.fillRect(snap(x, k), snap(y, k), Math.round(w), Math.round(h));
+}
+
+// Smooth fill of an ellipse centred on the middle of logical pixel (cx, cy),
+// one device row at a time.
+function smoothEllipse(cx, cy, rx, ry, k) {
+  const ox = snap(cx, k) + 0.5;
+  const oy = snap(cy, k) + 0.5;
+  rx += 0.45;
+  ry += 0.45;
+  const n = Math.ceil(ry * k);
+  for (let j = -n; j < n; j++) {
+    const dy = (j + 0.5) / k;
+    const q = 1 - (dy * dy) / (ry * ry);
+    if (q <= 0) continue;
+    const hw = Math.round(Math.sqrt(q) * rx * k) / k;
+    ctx.fillRect(ox - hw, oy + j / k, hw * 2, 1 / k);
+  }
 }
 
 export function disc(cx, cy, r, c) {
+  const k = kNow();
+  if (k > 1) {
+    ctx.fillStyle = c;
+    smoothEllipse(cx, cy, r, r, k);
+    return;
+  }
   cx = Math.round(cx);
   cy = Math.round(cy);
   ctx.fillStyle = c;
@@ -113,6 +172,12 @@ export function ring(cx, cy, r, c) {
 }
 
 export function ellipse(cx, cy, rx, ry, c) {
+  const k = kNow();
+  if (k > 1) {
+    ctx.fillStyle = c;
+    smoothEllipse(cx, cy, rx, ry, k);
+    return;
+  }
   cx = Math.round(cx);
   cy = Math.round(cy);
   ctx.fillStyle = c;
@@ -126,6 +191,34 @@ export function ellipse(cx, cy, rx, ry, c) {
 }
 
 export function line(x0, y0, x1, y1, c, thick = 1) {
+  const k = kNow();
+  if (k > 1) {
+    // The same pen (thick x 1 logical pixels), stepped one device pixel at a time.
+    ctx.fillStyle = c;
+    let ax = Math.round(x0 * k);
+    let ay = Math.round(y0 * k);
+    const bx = Math.round(x1 * k);
+    const by = Math.round(y1 * k);
+    const dx = Math.abs(bx - ax);
+    const dy = -Math.abs(by - ay);
+    const sx = ax < bx ? 1 : -1;
+    const sy = ay < by ? 1 : -1;
+    let err = dx + dy;
+    for (let guard = 0; guard < 8000; guard++) {
+      ctx.fillRect(ax / k, ay / k, thick, 1);
+      if (ax === bx && ay === by) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) {
+        err += dy;
+        ax += sx;
+      }
+      if (e2 <= dx) {
+        err += dx;
+        ay += sy;
+      }
+    }
+    return;
+  }
   x0 = Math.round(x0);
   y0 = Math.round(y0);
   x1 = Math.round(x1);
@@ -153,6 +246,20 @@ export function line(x0, y0, x1, y1, c, thick = 1) {
 
 // Scanline trapezoid between two horizontal edges.
 export function trap(yT, xlT, xrT, yB, xlB, xrB, c) {
+  const k = kNow();
+  if (k > 1) {
+    const top = Math.round(yT * k);
+    const n = Math.round(yB * k) - top;
+    if (n <= 0) return;
+    ctx.fillStyle = c;
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 1 : i / (n - 1);
+      const xl = snap(lerp(xlT, xlB, t), k);
+      const xr = snap(lerp(xrT, xrB, t), k);
+      ctx.fillRect(xl, (top + i) / k, xr - xl, 1 / k);
+    }
+    return;
+  }
   yT = Math.round(yT);
   yB = Math.round(yB);
   ctx.fillStyle = c;
@@ -173,6 +280,17 @@ export function rrect(x, y, w, h, r, c) {
   h = Math.round(h);
   r = Math.min(r, Math.floor(h / 2), Math.floor(w / 2));
   ctx.fillStyle = c;
+  const k = kNow();
+  if (k > 1) {
+    // Smooth corners: one device row at a time.
+    for (let j = 0; j < h * k; j++) {
+      const yy = (j + 0.5) / k;
+      const d = yy < r ? r - yy : yy > h - r ? yy - (h - r) : 0;
+      const inset = d ? snap(r - Math.sqrt(Math.max(0, r * r - d * d)), k) : 0;
+      ctx.fillRect(x + inset, y + j / k, w - inset * 2, 1 / k);
+    }
+    return;
+  }
   for (let i = 0; i < h; i++) {
     const k = i < r ? r - i - 0.5 : i >= h - r ? i - (h - r) + 0.5 : 0;
     const inset = k ? Math.round(r - Math.sqrt(Math.max(0, r * r - k * k))) : 0;
@@ -305,8 +423,8 @@ const SERIF = "bold %px Georgia, 'Times New Roman', Times, serif";
 // Georgia's numerals are old-style (they dip below the baseline); use lining figures.
 const SERIF_DIGITS = "bold %px 'Times New Roman', Times, serif";
 
-function serifGlyph(ch, size, color) {
-  const key = ch + '|' + size + '|' + color;
+function serifGlyph(ch, size, color, k = 1) {
+  const key = ch + '|' + size + '|' + color + '|' + k;
   let g = serifCache.get(key);
   if (g) return g;
   const font = (ch >= '0' && ch <= '9' ? SERIF_DIGITS : SERIF).replace('%', size);
@@ -314,11 +432,11 @@ function serifGlyph(ch, size, color) {
   probe.font = font;
   const adv = Math.max(1, Math.round(probe.measureText(ch).width));
   const pad = 2;
-  const lay = makeLayer(adv + pad * 2 + 2, Math.ceil(size * 1.45));
-  lay.font = font;
+  const lay = makeLayer((adv + pad * 2 + 2) * k, Math.ceil(size * 1.45) * k);
+  lay.font = font.replace(String(size) + 'px', size * k + 'px');
   lay.textBaseline = 'alphabetic';
   lay.fillStyle = '#fff';
-  lay.fillText(ch, pad, size);
+  lay.fillText(ch, pad * k, size * k);
   const img = lay.getImageData(0, 0, lay.canvas.width, lay.canvas.height);
   const d = img.data;
   const r = parseInt(color.slice(1, 3), 16);
@@ -332,7 +450,7 @@ function serifGlyph(ch, size, color) {
     d[i + 3] = on ? 255 : 0;
   }
   lay.putImageData(img, 0, 0);
-  g = { canvas: lay.canvas, adv, pad };
+  g = { canvas: lay.canvas, adv, pad, k };
   serifCache.set(key, g);
   return g;
 }
@@ -352,13 +470,15 @@ export function serif(str, x, y, size, color, o = {}) {
   else if (o.align === 'right') x -= w;
   x = Math.round(x);
   const top = Math.round(y + Math.round(size * 0.7) - size);
+  const k = kNow();
+  const put = (g, gx, gy) => ctx.drawImage(g.canvas, gx, gy, g.canvas.width / k, g.canvas.height / k);
   for (const ch of str) {
     if (o.shadow) {
-      const s = serifGlyph(ch, size, o.shadow);
-      ctx.drawImage(s.canvas, x - s.pad, top + Math.max(1, Math.round(size / 14)));
+      const s = serifGlyph(ch, size, o.shadow, k);
+      put(s, x - s.pad, top + Math.max(1, Math.round(size / 14)));
     }
-    const g = serifGlyph(ch, size, color);
-    ctx.drawImage(g.canvas, x - g.pad, top);
+    const g = serifGlyph(ch, size, color, k);
+    put(g, x - g.pad, top);
     x += g.adv + sp;
   }
   return w;

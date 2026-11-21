@@ -1,7 +1,7 @@
 // The garden court: camera projection, parallax background layers and the
 // shared sprite painters (blocks, ball, paddle).
 
-import { W, H, ctx, PAL, makeLayer, setTarget, rect, disc, ellipse, line, trap, rrect, text, textW, lerp, mulberry, bayer } from './gfx.js';
+import { W, H, K, ctx, PAL, makeLayer, makeScreenLayer, setTarget, rect, disc, ellipse, line, trap, rrect, text, textW, lerp, mulberry, bayer } from './gfx.js';
 import { WW, WH, PADDLE_Y } from './game.js';
 import { COUNTRIES } from './themes.js';
 
@@ -876,14 +876,14 @@ export function drawScene(time) {
   lastT = time;
   if (fadeT < 1 && prev) {
     fadeT = Math.min(1, fadeT + dt / FADE);
-    if (!fadeLayer || fadeLayer.canvas.width !== W || fadeLayer.canvas.height !== H) fadeLayer = makeLayer(W, H);
+    if (!fadeLayer || fadeLayer.canvas.width !== W * K || fadeLayer.canvas.height !== H * K) fadeLayer = makeScreenLayer();
     const now = theme;
     const nowL = L;
     const was = ctx;
     theme = prev;
     L = layersFor(prev);
     setTarget(fadeLayer);
-    fadeLayer.setTransform(1, 0, 0, 1, 0, 0);
+    fadeLayer.setTransform(K, 0, 0, K, 0, 0);
     fadeLayer.clearRect(0, 0, W, H);
     drawSceneOnce(time);
     setTarget(was);

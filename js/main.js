@@ -1,6 +1,6 @@
 // Boot, screen flow, input and the frame loop.
 
-import { W, H, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, rect, rrect, disc, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
+import { W, H, K, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, makeScreenLayer, resetTransform, rect, rrect, disc, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
 import { P, setCam, buildLayers, drawScene, setTheme, currentTheme, drawThemePreview, proj, unprojX, drawBlock, drawBall, drawShadow } from './scene.js';
 import { COUNTRIES, getCourtTheme } from './themes.js';
 import { Game, TOOLS, START_LIVES, RUSH_AT, MATCH_WEIGHTS } from './game.js';
@@ -2056,7 +2056,7 @@ function draw() {
 
   const g = S.game;
   const shake = g && g.shake > 0 ? Math.round(Math.sin(S.time * 90) * g.shake * 8) : 0;
-  ctx.setTransform(1, 0, 0, 1, shake, 0);
+  resetTransform(shake);
   drawScene(S.time);
 
   if (S.titleVis > 0.01) drawPyramid(S.titleVis);
@@ -2065,17 +2065,17 @@ function draw() {
     if (S.gameVis >= 1) {
       drawGame(g, S.time);
     } else {
-      if (!gameLayer || gameLayer.canvas.height !== H || gameLayer.canvas.width !== W) gameLayer = makeLayer(W, H);
+      if (!gameLayer || gameLayer.canvas.height !== H * K || gameLayer.canvas.width !== W * K) gameLayer = makeScreenLayer();
       gameLayer.clearRect(0, 0, W, H);
       setTarget(gameLayer);
       drawGame(g, S.time);
       setTarget(null);
       ctx.globalAlpha = S.gameVis;
-      ctx.drawImage(gameLayer.canvas, 0, 0);
+      ctx.drawImage(gameLayer.canvas, 0, 0, W, H);
       ctx.globalAlpha = 1;
     }
   }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  resetTransform();
 
   const hud = S.leaving ? S.leaving.name : S.screen;
   if (g && (hud === 'countdown' || hud === 'play' || hud === 'paused')) {
@@ -2274,17 +2274,22 @@ document.addEventListener('visibilitychange', () => {
 
 // The canvas fills the window. One game pixel is sized so that at least
 // 240 x 320 of them fit; any spare room becomes more court and garden.
+const HD_OFF = new URLSearchParams(location.search).get('hd') === '0';
+
 function resize() {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const unit = Math.min(vw / 240, vh / 320);
   const w = clamp(Math.floor(vw / unit), 240, 760);
   const h = clamp(Math.floor(vh / unit), 320, 520);
-  if (w !== W || h !== H || !S.ready) {
-    setSize(w, h);
+  const scale = Math.min(vw / w, vh / h);
+  // HD: as many device pixels per logical pixel as the display really shows,
+  // up to 3 (?hd=0 draws the classic low-resolution way, for comparison).
+  const k = HD_OFF ? 1 : clamp(Math.floor(scale * (window.devicePixelRatio || 1)), 1, 3);
+  if (w !== W || h !== H || k !== K || !S.ready) {
+    setSize(w, h, k);
     buildLayers();
   }
-  const scale = Math.min(vw / w, vh / h);
   canvas.style.width = Math.round(w * scale) + 'px';
   canvas.style.height = Math.round(h * scale) + 'px';
 }
