@@ -67,7 +67,6 @@ const S = {
   result: null,
   ending: 0,
   introSeen: false,
-  eraseArmed: 0,
   touch: false,
   left: false,
   right: false,
@@ -551,7 +550,6 @@ function play() {
 
 function openSound() {
   S.overlay = S.overlayKind = 'sound';
-  S.eraseArmed = 0;
 }
 
 function openTheme() {
@@ -645,7 +643,6 @@ function update(dt) {
   S.gameVis = step(S.gameVis, GAME_SCREENS.has(S.screen), 4);
   S.landing = step(S.landing, (S.next || S.screen) === 'title' || S.screen === 'loading', 1.6);
   S.titleVis = step(S.titleVis, S.screen === 'title' && !S.leaving, S.screen === 'title' ? 1.5 : 3.5);
-  if (S.eraseArmed > 0) S.eraseArmed -= dt;
 
   if (S.screen === 'loading' && S.ready && S.t > 1.5) go(S.bootTo || 'title');
   // Ask about the typed name once typing pauses.
@@ -1681,7 +1678,7 @@ function drawSoundOverlay(k) {
   checker(0, 0, W, H, 'rgba(6,18,12,' + (0.35 * k).toFixed(2) + ')');
   const s = save.data.settings;
   const w = 176;
-  const h = 199;
+  const h = 165; // music, effects and sound on/off (vibration stays on; no erase here)
   const x = Math.round((W - w) / 2);
   const y = Math.round((H - h) / 2);
   panel(easeBack(k), x, y, w, h, 'dark', () => {
@@ -1700,20 +1697,6 @@ function drawSoundOverlay(k) {
       }
     });
     ghost('mute', s.muted ? 'SOUND IS OFF' : 'SOUND IS ON', W / 2, y + 108, w - 40, 15, toggleMute, s.muted ? { color: PAL.dim, line: PAL.dim } : {});
-    ghost('vibrate', s.haptics ? 'VIBRATION IS ON' : 'VIBRATION IS OFF', W / 2, y + 129, w - 40, 15, () => {
-      setSetting('haptics', !s.haptics);
-      save.commit();
-      haptics.play('power');
-    }, s.haptics ? {} : { color: PAL.dim, line: PAL.dim });
-    const armed = S.eraseArmed > 0;
-    ghost('erase', armed ? 'TAP AGAIN TO ERASE' : 'ERASE SAVE DATA', W / 2, y + 150, w - 40, 15, () => {
-      if (armed) {
-        S.eraseArmed = 0;
-        save.erase();
-      } else {
-        S.eraseArmed = 3;
-      }
-    }, armed ? { color: '#ff9c7a', line: '#ff9c7a' } : { color: PAL.dim, line: '#3c5a48' });
     pill('done', 'DONE', W / 2, y + h - 27, 80, 17, closeSound);
   });
   S.primary = closeSound;

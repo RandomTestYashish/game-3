@@ -695,18 +695,14 @@ def desktop(browser, url):
     d.click("home")
     d.screen("title", 0.6)
 
-    # --- erase save
+    # --- the sound sheet: music, effects, sound on/off and Done only
     d.click("play")
     d.screen("courts", 0.6)
     d.click("sound")
     d.wait("__court.S.overlayT>=1")
-    d.click("erase")
-    time.sleep(0.15)
-    check("erase needs a second tap", d.ev("__court.save.data.progress.unlocked") == 120)
-    d.click("erase")
-    time.sleep(0.3)
-    s = d.saved()
-    check("erase clears progress and leaderboard but keeps sound settings", s["progress"]["unlocked"] == 1 and s["progress"]["levels"] == {} and s["leaderboard"] == [] and s["settings"]["music"] == music and s["onboarded"] is False, s)
+    ids = d.ev("__court.ui.regions.map(r=>r.id)")
+    check("sound sheet has no Vibration or Erase Save Data button", "vibrate" not in ids and "erase" not in ids and all(i in ids for i in ["music", "sfx", "mute", "done"]), ids)
+    check("progress is kept (nothing to erase it from here)", d.ev("__court.save.data.progress.unlocked") == 120)
     pg.keyboard.press("Escape")
     d.wait("__court.S.overlayT<=0")
 
