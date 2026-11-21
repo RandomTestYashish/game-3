@@ -26,6 +26,13 @@ export function initCanvas(canvas) {
   loadTextFont();
 }
 
+// Older browsers without roundRect get plain rectangles (only the HD fans use it).
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) {
+    this.rect(x, y, w, h);
+  };
+}
+
 // HD text: Barlow Condensed (assets/fonts, SIL OFL), drawn into the bitmap
 // font's own cells so every layout stays as it was. Until it has loaded (and
 // on 1x canvases) the bitmap font is used.

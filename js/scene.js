@@ -1431,6 +1431,21 @@ function drawFan(x, y, n, i, row, time, wx, wy, u) {
   const shirts = crowdColours().shirts;
   const shirt = shirts[Math.floor(hash(i, row + 3) * shirts.length)];
   const skin = FAN_SKIN[Math.floor(hash(i, row + 5) * FAN_SKIN.length)];
+  if (K > 1) {
+    let pose = 'rest';
+    let beat = 0;
+    if (crest > 0.3) pose = 'wave';
+    else if (cheer) {
+      pose = 'cheer';
+      beat = Math.sin(time * 14 + r * 30) > 0 ? 1 : 0;
+    } else if (P.groan > 0 && r < 0.75) pose = 'groan';
+    else if ((P.clap > 0 && r < 0.85) || Math.sin(time * 0.9 + r * 50) > 0.85) {
+      pose = 'clap';
+      beat = Math.sin(time * 16 + r * 9) > 0 ? 1 : 0;
+    }
+    drawFanHD(x + 1.5 * n, y, n, pose, beat, shirt, skin, FAN_HAIR[Math.floor(r * FAN_HAIR.length)], hash(i, row + 17), time, r);
+    return;
+  }
   const px = (dx, dy, w, h, c) => rect(x + dx * n, y + dy * n, w * n, h * n, c);
   px(0, -6, 3, 5, shirt);
   px(0, -9, 3, 3, skin);
@@ -1455,6 +1470,148 @@ function drawFan(x, y, n, i, row, time, wx, wy, u) {
   } else {
     px(-1, -6, 1, 3, shade(shirt, -0.3));
     px(3, -6, 1, 3, shade(shirt, -0.3));
+  }
+}
+
+// A fan in HD: the same size and poses as the pixel fan, drawn with smooth
+// shapes and more to them: a shaded, rounded body; a round head with hair
+// (short, long, a cap or a headband), eyes on the nearer ones, sunglasses on a
+// few; striped shirts, collars and scarves; arms with hands; and, cheering,
+// the odd flag or foam finger. (cx, y) is the middle of their feet line, u the
+// size of one of the pixel fan's pixels; v picks their look.
+const FAN_ACCENTS = ['#f5e663', '#ffffff', '#3fae5e', '#e8443a', '#4a8ee8'];
+function drawFanHD(cx, y, u, pose, beat, shirt, skin, hair, v, time, r) {
+  const c = ctx;
+  const dark = shade(shirt, -0.28);
+  const accent = FAN_ACCENTS[Math.floor(v * 97) % FAN_ACCENTS.length];
+  const fill = (col) => {
+    c.fillStyle = col;
+    c.fill();
+  };
+  // Arms first, behind the body when they're down.
+  const sh = y - 5.2 * u; // shoulder height
+  const hands = {
+    rest: [[-1.7, -2.6], [1.7, -2.6]],
+    wave: [[-1.5, -11.6], [1.5, -11.6]],
+    cheer: [[-2.3, -10.6 - beat], [2.3, -11.4 + beat]],
+    groan: [[-1.3, -8.4], [1.3, -8.4]],
+    clap: [[-0.5 + beat * 0.35, -4.3], [0.5 - beat * 0.35, -4.3]],
+  }[pose];
+  c.lineCap = 'round';
+  c.lineWidth = 0.95 * u;
+  hands.forEach(([hx, hy], k) => {
+    const sx = cx + (k ? 1.15 : -1.15) * u;
+    c.strokeStyle = pose === 'rest' ? dark : skin;
+    c.beginPath();
+    c.moveTo(sx, sh);
+    c.lineTo(cx + hx * u, y + hy * u);
+    c.stroke();
+    c.beginPath();
+    c.arc(cx + hx * u, y + hy * u, 0.55 * u, 0, Math.PI * 2);
+    fill(skin);
+  });
+  // A flag or a foam finger, held up by the right hand when cheering.
+  if ((pose === 'cheer' || pose === 'wave') && v < 0.22) {
+    const [hx, hy] = hands[1];
+    const tx = cx + hx * u;
+    const ty = y + hy * u;
+    if (v < 0.12) {
+      c.strokeStyle = '#d8d2c0';
+      c.lineWidth = 0.4 * u;
+      c.beginPath();
+      c.moveTo(tx, ty + 0.6 * u);
+      c.lineTo(tx, ty - 4.2 * u);
+      c.stroke();
+      const flap = Math.sin(time * 9 + r * 20) * 0.5 * u;
+      c.beginPath();
+      c.moveTo(tx, ty - 4.2 * u);
+      c.lineTo(tx + 3.2 * u, ty - 3.6 * u + flap);
+      c.lineTo(tx, ty - 2.2 * u);
+      fill(accent);
+    } else {
+      c.beginPath();
+      c.roundRect(tx - 0.9 * u, ty - 2.6 * u, 1.8 * u, 2.4 * u, 0.5 * u);
+      c.roundRect(tx - 0.35 * u, ty - 4.4 * u, 0.9 * u, 2 * u, 0.45 * u);
+      fill('#f5e663');
+    }
+  }
+  // The body: rounded shoulders, a darker side, and the shirt's detail.
+  c.beginPath();
+  c.roundRect(cx - 1.55 * u, y - 6 * u, 3.1 * u, 5.3 * u, [1.1 * u, 1.1 * u, 0.3 * u, 0.3 * u]);
+  fill(shirt);
+  c.save();
+  c.clip();
+  c.fillStyle = dark;
+  c.fillRect(cx + 0.75 * u, y - 6 * u, 0.9 * u, 5.4 * u);
+  if (v > 0.6 && v < 0.75) {
+    c.fillStyle = shade(shirt, 0.35); // a stripe across the chest
+    c.fillRect(cx - 1.6 * u, y - 4.3 * u, 3.2 * u, 0.8 * u);
+  } else if (v >= 0.75 && v < 0.85) {
+    c.fillStyle = '#f4f1de'; // a collar
+    c.beginPath();
+    c.moveTo(cx - 0.8 * u, y - 6 * u);
+    c.lineTo(cx, y - 5 * u);
+    c.lineTo(cx + 0.8 * u, y - 6 * u);
+    c.fill();
+  }
+  c.restore();
+  if (v >= 0.85) {
+    // A scarf in two colours, its end hanging down.
+    c.fillStyle = accent;
+    c.fillRect(cx - 1.4 * u, y - 6.1 * u, 2.8 * u, 0.8 * u);
+    c.fillRect(cx + 0.3 * u, y - 5.4 * u, 0.7 * u, 2.2 * u);
+    c.fillStyle = shade(accent, -0.35);
+    c.fillRect(cx - 0.6 * u, y - 6.1 * u, 0.5 * u, 0.8 * u);
+    c.fillRect(cx + 0.3 * u, y - 4.4 * u, 0.7 * u, 0.4 * u);
+  }
+  // Neck and head.
+  c.fillStyle = shade(skin, -0.15);
+  c.fillRect(cx - 0.45 * u, y - 6.5 * u, 0.9 * u, 0.7 * u);
+  const hy = y - 7.6 * u;
+  c.beginPath();
+  c.arc(cx, hy, 1.45 * u, 0, Math.PI * 2);
+  fill(skin);
+  // Hair, or what's on their head.
+  const style = Math.floor(v * 7) % 5;
+  c.beginPath();
+  if (style === 0 || style === 1) {
+    c.arc(cx, hy - 0.1 * u, 1.5 * u, Math.PI * 1.05, Math.PI * 1.95); // short hair
+    fill(hair);
+  } else if (style === 2) {
+    c.arc(cx, hy - 0.1 * u, 1.55 * u, Math.PI * 0.95, Math.PI * 2.05); // long hair down the sides
+    c.lineTo(cx + 1.55 * u, hy + 1.6 * u);
+    c.lineTo(cx + 1.0 * u, hy + 1.6 * u);
+    c.lineTo(cx + 1.0 * u, hy);
+    c.lineTo(cx - 1.0 * u, hy);
+    c.lineTo(cx - 1.0 * u, hy + 1.6 * u);
+    c.lineTo(cx - 1.55 * u, hy + 1.6 * u);
+    fill(hair);
+  } else if (style === 3) {
+    c.arc(cx, hy - 0.2 * u, 1.55 * u, Math.PI, Math.PI * 2); // a cap, peak to one side
+    fill(accent);
+    c.fillStyle = shade(accent, -0.3);
+    c.fillRect(cx + (r < 0.5 ? 0.3 : -2.3) * u, hy - 0.35 * u, 2 * u, 0.5 * u);
+  } else {
+    c.arc(cx, hy - 0.1 * u, 1.5 * u, Math.PI * 1.05, Math.PI * 1.95);
+    fill(hair);
+    c.fillStyle = accent; // a headband
+    c.fillRect(cx - 1.45 * u, hy - 0.75 * u, 2.9 * u, 0.45 * u);
+  }
+  // A face, where there's room for one.
+  if (u * K >= 3) {
+    if (v > 0.45 && v < 0.55) {
+      c.fillStyle = '#15171c'; // sunglasses
+      c.fillRect(cx - 1.05 * u, hy + 0.05 * u, 2.1 * u, 0.5 * u);
+    } else {
+      c.fillStyle = '#2a1b12';
+      const e = Math.max(0.3, 1 / K);
+      c.fillRect(cx - 0.65 * u, hy + 0.1 * u, e * u, e * u);
+      c.fillRect(cx + 0.3 * u, hy + 0.1 * u, e * u, e * u);
+    }
+    if (pose === 'cheer' || pose === 'wave') {
+      c.fillStyle = '#5a1a14'; // an open mouth, shouting
+      c.fillRect(cx - 0.3 * u, hy + 0.75 * u, 0.6 * u, 0.45 * u);
+    }
   }
 }
 
