@@ -1,7 +1,7 @@
 // The garden court: camera projection, parallax background layers and the
 // shared sprite painters (blocks, ball, paddle).
 
-import { W, H, K, ctx, PAL, makeLayer, makeScreenLayer, smoothDraw, setTarget, rect, disc, ellipse, line, trap, rrect, text, textW, lerp, mulberry, bayer } from './gfx.js';
+import { W, H, K, ctx, PAL, makeLayer, makeScreenLayer, smoothDraw, scaleNx, textWidth, setTarget, rect, disc, ellipse, line, trap, rrect, text, textW, lerp, mulberry, bayer } from './gfx.js';
 import { WW, WH, PADDLE_Y } from './game.js';
 import { COUNTRIES } from './themes.js';
 
@@ -98,10 +98,43 @@ export function layersFor(t) {
     hd.set(key, l); // most recently used last
     return l;
   }
-  l = makeLayers(t.countryId, t.backgroundPalette, k);
+  l = smoothedLayers(t, k);
   hd.set(key, l);
   while (hd.size > 3) hd.delete(hd.keys().next().value);
   return l;
+}
+// HD backgrounds take the best of two ways: the sky, clouds, trees, wall,
+// canopy and bushes are painted at full resolution (smooth gradients and
+// round leaves), while the hills and landmarks are painted at 1x and smoothed
+// with Scale2x/3x, which turns their pixel stair-steps (slopes, roofs,
+// pyramid edges) into clean diagonals.
+const SMOOTHED = new Set(['hills', 'land']);
+function smoothedLayers(t, k) {
+  const sharp = makeLayers(t.countryId, t.backgroundPalette, k);
+  const base = previewLayers(t); // the same painting at 1x (same seed, so it lines up)
+  const out = { ...sharp };
+  for (const name of SMOOTHED) {
+    const c = base[name];
+    const w = c.width;
+    const h = c.height;
+    let px = new Uint32Array(c.getContext('2d').getImageData(0, 0, w, h).data.buffer);
+    let mw = w;
+    let mh = h;
+    for (const f of k === 3 ? [3] : [2]) {
+      px = scaleNx(px, mw, mh, f);
+      mw *= f;
+      mh *= f;
+    }
+    const lay = makeLayer(mw, mh);
+    const img = lay.createImageData(mw, mh);
+    new Uint32Array(img.data.buffer).set(px);
+    lay.putImageData(img, 0, 0);
+    lay.canvas.lw = w;
+    lay.canvas.lh = h;
+    lay.canvas.k = mw / w;
+    out[name] = lay.canvas;
+  }
+  return out;
 }
 function previewLayers(t) {
   return cache[t.countryId] || (cache[t.countryId] = makeLayers(t.countryId, t.backgroundPalette, 1));
@@ -899,8 +932,23 @@ function drawSky(time, skyY, ref, horizon) {
   for (const s of L.stars) {
     const tw = Math.sin(time * s.f + s.p);
     const sy = Math.round(s.y * k) + skyY;
-    if (tw > -0.3) rect(s.x, sy, 1, 1, tw > 0.75 ? '#ffffff' : '#cdbfe0');
-    if (tw > 0.93) rect(s.x - 1, sy, 3, 1, '#cdbfe0');
+    if (K > 1) {
+      // HD: round points of light, a soft cross on the brightest.
+      if (tw > -0.3) {
+        ctx.fillStyle = tw > 0.75 ? '#ffffff' : '#cdbfe0';
+        ctx.beginPath();
+        ctx.arc(s.x + 0.5, sy + 0.5, tw > 0.75 ? 0.6 : 0.42, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (tw > 0.93) {
+        ctx.fillStyle = '#cdbfe0';
+        ctx.fillRect(s.x - 1.2, sy + 0.35, 3.4, 0.3);
+        ctx.fillRect(s.x + 0.35, sy - 1.2, 0.3, 3.4);
+      }
+    } else {
+      if (tw > -0.3) rect(s.x, sy, 1, 1, tw > 0.75 ? '#ffffff' : '#cdbfe0');
+      if (tw > 0.93) rect(s.x - 1, sy, 3, 1, '#cdbfe0');
+    }
   }
   const cw = L.clouds.lw;
   const cx0 = -wrap(time * 3.6 - P.shift * P.sRef, cw);
@@ -1370,7 +1418,7 @@ function word(str, x, y, hi, lo) {
   text(str, x, y, lo, { shadow: C12.o, sp: BANNER_SP });
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x - 1, y, textW(str, 1, BANNER_SP) + 2, 3);
+  ctx.rect(x - 1, y, textWidth(str, 1, BANNER_SP) + 2, 3);
   ctx.clip();
   text(str, x, y, hi, { sp: BANNER_SP });
   ctx.restore();
@@ -1672,21 +1720,21 @@ function drawBanner(time) {
   ctx.rect(x0, y0, x1 - x0, h);
   ctx.clip();
   // THE COURT: the ball, then the wordmark.
-  const tw = textW('THE ', 1, BANNER_SP) + BANNER_SP;
-  const aw = 9 + 4 + tw + textW('COURT', 1, BANNER_SP);
+  const tw = textWidth('THE ', 1, BANNER_SP) + BANNER_SP;
+  const aw = 9 + 4 + tw + textWidth('COURT', 1, BANNER_SP);
   const ax = cx - Math.round(aw / 2);
   const ay = Math.round(y0 + offA);
   logo(LOGO_BALL, ax, ay + Math.round((h - 9) / 2));
   word('THE', ax + 13, ay + Math.round((h - 7) / 2) + 1, '#fff', '#bcd');
   word('COURT', ax + 13 + tw, ay + Math.round((h - 7) / 2) + 1, '#ff8', '#fb2');
   // COURT BITES: the wordmark, then the burger and the drink.
-  const cw = textW('COURT ', 1, BANNER_SP) + BANNER_SP;
-  const bw = cw + textW('BITES', 1, BANNER_SP) + 4 + 11 + 1 + 6;
+  const cw = textWidth('COURT ', 1, BANNER_SP) + BANNER_SP;
+  const bw = cw + textWidth('BITES', 1, BANNER_SP) + 4 + 11 + 1 + 6;
   const bx = cx - Math.round(bw / 2);
   const by = Math.round(y0 + offB);
   word('COURT', bx, by + Math.round((h - 7) / 2) + 1, '#fff', '#bcd');
   word('BITES', bx + cw, by + Math.round((h - 7) / 2) + 1, '#fc6', '#f72');
-  const ix = bx + cw + textW('BITES', 1, BANNER_SP) + 4;
+  const ix = bx + cw + textWidth('BITES', 1, BANNER_SP) + 4;
   logo(LOGO_BURGER, ix, by + Math.round((h - 9) / 2));
   logo(LOGO_DRINK, ix + 12, by + Math.round((h - 8) / 2));
   ctx.restore();

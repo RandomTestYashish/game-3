@@ -1,6 +1,6 @@
 // Boot, screen flow, input and the frame loop.
 
-import { W, H, K, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, makeScreenLayer, resetTransform, rect, rrect, disc, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
+import { W, H, K, hdTextOn, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, makeScreenLayer, resetTransform, rect, rrect, disc, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
 import { P, setCam, buildLayers, drawScene, setTheme, currentTheme, drawThemePreview, proj, unprojX, drawBlock, drawBall, drawShadow } from './scene.js';
 import { COUNTRIES, getCourtTheme } from './themes.js';
 import { Game, TOOLS, START_LIVES, RUSH_AT, MATCH_WEIGHTS } from './game.js';
@@ -1993,6 +1993,24 @@ function drawSignature(k) {
   rect(x0, y0 + 4, 1, bh - 8, PAL.yellow);
   rect(x0 + bw - 1, y0 + 4, 1, bh - 8, PAL.yellow);
   ctx.globalAlpha = a0;
+  const nx = Math.round(x0 + bw / 2 - (name.w * z) / 2);
+  const ny = y0 + 5 + by.h + 4;
+  if (hdTextOn()) {
+    // HD: the same plate in the HD type, YASHISH in gold with the band of
+    // light running across it.
+    text(SIG.by, x0 + bw / 2, y0 + 5, PAL.cream, { align: 'center', shadow: PAL.ink, sp: 1 });
+    text(SIG.name, x0 + bw / 2, ny, PAL.yellow, { align: 'center', shadow: PAL.ink, scale: z, sp: 1 });
+    const bx = x0 + sweep * (bw + 30) - 15;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(bx, ny - 2);
+    ctx.lineTo(bx + 6, ny - 2);
+    ctx.lineTo(bx + 1, ny + name.h * z + 2);
+    ctx.lineTo(bx - 5, ny + name.h * z + 2);
+    ctx.clip();
+    text(SIG.name, x0 + bw / 2, ny, '#ffffff', { align: 'center', scale: z, sp: 1 });
+    ctx.restore();
+  } else {
   // CRAFTED BY in cream; a few of its pixels glint white in turn.
   const byX = Math.round(x0 + bw / 2 - by.w / 2);
   const byY = y0 + 5;
@@ -2002,13 +2020,12 @@ function drawSignature(k) {
     rect(byX + p.x, byY + p.y, 1, 1, Math.abs(p.r - glint) < 0.03 ? '#ffffff' : PAL.cream);
   }
   // YASHISH in gold, a slanted band of light crossing it pixel by pixel.
-  const nx = Math.round(x0 + bw / 2 - (name.w * z) / 2);
-  const ny = y0 + 5 + by.h + 4;
   for (const p of name.px) {
     const band = sweep * (name.w + name.h + 8) - 4 - (p.x + (name.h - p.y));
     const c = Math.abs(band) < 1.4 ? '#ffffff' : Math.abs(band) < 3.2 ? PAL.yellowHi : PAL.yellow;
     rect(nx + p.x * z + 1, ny + p.y * z + 1, z, z, PAL.ink);
     rect(nx + p.x * z, ny + p.y * z, z, z, c);
+  }
   }
   // Sparkles that twinkle round the name.
   [[nx - 4, ny + 1], [nx + name.w * z + 3, ny + 2], [nx + name.w * z * 0.55, ny - 3]].forEach(([sx, sy], i) => {

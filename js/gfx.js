@@ -323,6 +323,15 @@ export function rrect(x, y, w, h, r, c) {
 }
 
 export function checker(x, y, w, h, c, phase = 0) {
+  if (kNow() > 1) {
+    // HD: the dither's half coverage as an even shade.
+    const a0 = ctx.globalAlpha;
+    ctx.globalAlpha = a0 * 0.5;
+    ctx.fillStyle = c;
+    ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = a0;
+    return;
+  }
   x = Math.round(x);
   y = Math.round(y);
   ctx.fillStyle = c;
@@ -395,33 +404,41 @@ export function textW(str, scale = 1, sp = 1) {
   return Math.max(0, w - sp * scale);
 }
 
-function glyphs(str, x, y, c, sc, sp) {
+// HD text is set in the font's own spacing inside the box the bitmap text
+// would take (w wide from x), keeping its alignment there; it is squeezed
+// only if it would not fit the box.
+const hdText = () => textFontReady && kNow() > 1;
+export const hdTextOn = hdText;
+// The width text really takes: the HD font's own width in HD, else the
+// bitmap width. For laying things out after a word.
+export function textWidth(str, scale = 1, sp = 1) {
+  str = String(str).toUpperCase();
+  if (!hdText()) return textW(str, scale, sp);
+  ctx.save();
+  ctx.font = '600 ' + 10 * scale + 'px ' + TEXT_FONT;
+  const m = ctx.measureText(str).width;
+  ctx.restore();
+  return Math.min(m, textW(str, scale, sp) + scale);
+}
+function hdString(str, x, y, c, sc, w, align = 'left') {
+  ctx.save();
   ctx.fillStyle = c;
-  if (textFontReady && kNow() > 1) {
-    // Each letter centred in its bitmap cell, capitals 7 cells tall, and
-    // squeezed only if it would spill well past the cell.
-    ctx.save();
-    ctx.font = '600 ' + 10 * sc + 'px ' + TEXT_FONT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    for (const ch of str) {
-      const g = FONT[ch] || FONT['?'];
-      const cw = g[0].length * sc;
-      if (ch !== ' ') {
-        const cx = x + cw / 2;
-        const m = ctx.measureText(ch).width;
-        const room = cw + sc * 1.4;
-        if (m > room) {
-          ctx.save();
-          ctx.translate(cx, 0);
-          ctx.scale(room / m, 1);
-          ctx.fillText(ch, 0, y + 7 * sc);
-          ctx.restore();
-        } else ctx.fillText(ch, cx, y + 7 * sc);
-      }
-      x += (g[0].length + sp) * sc;
-    }
-    ctx.restore();
+  ctx.font = '600 ' + 10 * sc + 'px ' + TEXT_FONT;
+  ctx.textBaseline = 'alphabetic';
+  const m = ctx.measureText(str).width;
+  const fit = m > w + sc ? (w + sc) / m : 1;
+  const ax = align === 'center' ? x + w / 2 : align === 'right' ? x + w : x;
+  ctx.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
+  ctx.translate(ax, y + 7 * sc);
+  if (fit < 1) ctx.scale(fit, 1);
+  ctx.fillText(str, 0, 0);
+  ctx.restore();
+}
+
+function glyphs(str, x, y, c, sc, sp, align = 'left') {
+  ctx.fillStyle = c;
+  if (hdText()) {
+    hdString(str, x, y, c, sc, textW(str, sc, sp), align);
     return;
   }
   for (const ch of str) {
@@ -461,8 +478,8 @@ export function text(str, x, y, c, o = {}) {
   else if (o.align === 'right') x -= w;
   x = Math.round(x);
   y = Math.round(y);
-  if (o.shadow) glyphs(str, x, y + sc, o.shadow, sc, sp);
-  glyphs(str, x, y, c, sc, sp);
+  if (o.shadow) glyphs(str, x, y + sc, o.shadow, sc, sp, o.align);
+  glyphs(str, x, y, c, sc, sp, o.align);
   return w;
 }
 
@@ -540,26 +557,42 @@ export function serif(str, x, y, size, color, o = {}) {
 export function blockTitle(str, cx, y, scale = 3) {
   const w = textW(str, scale, 1);
   const x = Math.round(cx - w / 2);
-  glyphs(str, x, y + scale, '#5a3410', scale, 1);
-  glyphs(str, x + 1, y + scale, '#5a3410', scale, 1);
-  glyphs(str, x, y, '#f2b632', scale, 1);
+  glyphs(str, x, y + scale, '#5a3410', scale, 1, 'center');
+  glyphs(str, x + 1, y + scale, '#5a3410', scale, 1, 'center');
+  glyphs(str, x, y, '#f2b632', scale, 1, 'center');
   ctx.save();
   ctx.beginPath();
   ctx.rect(x - 1, y, w + 2, scale * 3);
   ctx.clip();
-  glyphs(str, x, y, '#fff3c4', scale, 1);
+  glyphs(str, x, y, '#fff3c4', scale, 1, 'center');
   ctx.restore();
   ctx.save();
   ctx.beginPath();
   ctx.rect(x - 1, y + scale * 3, w + 2, scale);
   ctx.clip();
-  glyphs(str, x, y, PAL.yellow, scale, 1);
+  glyphs(str, x, y, PAL.yellow, scale, 1, 'center');
   ctx.restore();
   return w;
 }
 
 // A four-point sparkle; arm 1 or 2.
 export function sparkle(x, y, arm = 2, c = PAL.yellow) {
+  if (kNow() > 1) {
+    // HD: a fine four-point star.
+    const t = 0.45;
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, y + 0.5 - arm - 0.5);
+    ctx.lineTo(x + 0.5 + t, y + 0.5 - t);
+    ctx.lineTo(x + 0.5 + arm + 0.5, y + 0.5);
+    ctx.lineTo(x + 0.5 + t, y + 0.5 + t);
+    ctx.lineTo(x + 0.5, y + 0.5 + arm + 0.5);
+    ctx.lineTo(x + 0.5 - t, y + 0.5 + t);
+    ctx.lineTo(x + 0.5 - arm - 0.5, y + 0.5);
+    ctx.lineTo(x + 0.5 - t, y + 0.5 - t);
+    ctx.fill();
+    return;
+  }
   rect(x - arm, y, arm * 2 + 1, 1, c);
   rect(x, y - arm, 1, arm * 2 + 1, c);
 }
@@ -569,9 +602,18 @@ export function racket(cx, cy, dir = 1) {
   disc(cx, cy, 6, PAL.cream);
   disc(cx, cy, 5, PAL.panel);
   ctx.fillStyle = '#9fb7a2';
-  for (let dy = -4; dy <= 4; dy++) {
-    for (let dx = -4; dx <= 4; dx++) {
-      if (dx * dx + dy * dy <= 18 && (dx & 1) === 0 && (dy & 1) === 0) ctx.fillRect(cx + dx, cy + dy, 1, 1);
+  if (kNow() > 1) {
+    // HD: fine strings across the head.
+    for (let d = -4; d <= 4; d += 2) {
+      const half = Math.sqrt(Math.max(0, 25 - d * d));
+      ctx.fillRect(cx + 0.5 - half, cy + 0.35 + d, half * 2, 0.35);
+      ctx.fillRect(cx + 0.35 + d, cy + 0.5 - half, 0.35, half * 2);
+    }
+  } else {
+    for (let dy = -4; dy <= 4; dy++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        if (dx * dx + dy * dy <= 18 && (dx & 1) === 0 && (dy & 1) === 0) ctx.fillRect(cx + dx, cy + dy, 1, 1);
+      }
     }
   }
   line(cx - dir * 4, cy + 5, cx - dir * 9, cy + 11, PAL.cream, 2);
@@ -720,7 +762,7 @@ for (const k in ICONS) ICONS[k] = ICONS[k].split('/');
 
 // Pixel art made smooth for HD: Scale2x / Scale3x (the EPX family) round off
 // the stair-steps of a 1-bit pattern at 2x or 3x, keeping its shape.
-function scaleNx(src, w, h, n) {
+export function scaleNx(src, w, h, n) {
   const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : src[y * w + x]);
   const out = new src.constructor(w * n * h * n); // 1-bit masks or 32-bit colours alike
   const W2 = w * n;

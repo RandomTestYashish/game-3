@@ -152,9 +152,10 @@ function rackets(x, y, w, h, t) {
     disc(hx, cy, 5, PAL.cream);
     disc(hx, cy, 4, strings);
     ctx.fillStyle = '#f4f1de';
+    const sw = K > 1 ? 0.45 : 1; // HD: fine strings
     for (let d = -3; d <= 3; d += 2) {
-      ctx.fillRect(hx + d, cy - 3, 1, 7);
-      ctx.fillRect(hx - 3, cy + d, 7, 1);
+      ctx.fillRect(hx + d + (1 - sw) / 2, cy - 3, sw, 7);
+      ctx.fillRect(hx - 3, cy + d + (1 - sw) / 2, 7, sw);
     }
   };
   one(cx - 6, -1, '#2d4f9a');
@@ -207,7 +208,16 @@ function speedBall(x, y, w, h, t) {
   disc(cx, cy, 7, '#d8f04a');
   disc(cx - 2, cy - 2, 2, '#f4ffb0');
   // The seam: two curves.
-  for (let i = -5; i <= 5; i++) {
+  if (K > 1) {
+    // HD: the seam as two smooth curves.
+    ctx.strokeStyle = '#f4f1de';
+    ctx.lineWidth = 0.8;
+    for (const sd of [-1, 1]) {
+      ctx.beginPath();
+      for (let i = -5; i <= 5; i += 0.5) ctx.lineTo(cx + 0.5 + sd * (3 + Math.cos((i / 5) * 1.3) * 2), cy + 0.5 + i);
+      ctx.stroke();
+    }
+  } else for (let i = -5; i <= 5; i++) {
     rect(cx - 3 - Math.round(Math.cos((i / 5) * 1.3) * 2), cy + i, 1, 1, '#f4f1de');
     rect(cx + 3 + Math.round(Math.cos((i / 5) * 1.3) * 2), cy + i, 1, 1, '#f4f1de');
   }
