@@ -1058,7 +1058,7 @@ const SCREENS = {
       rect(sx, sy - arm, 1, arm * 2 + 1, '#ffffff');
     }
     // Two ways in, as cards: The Rally (solo, as always) and Multiplayer; under
-    // them Courts, Scores and Sound. Wide screens set the cards side by side;
+    // them Courts, Scores, Theme and Sound. Wide screens set the cards side by side;
     // short ones bring everything up over the brick pyramid.
     const L = titleLayout();
     const lift = Math.round((1 - k) * 8);
@@ -1070,7 +1070,7 @@ const SCREENS = {
       go('scores');
     };
     // Phones: square tiles (icon over label); wide screens: icon beside label.
-    const row = [['courts', 'COURTS', 'bricks', () => go('courts')], ['scores', 'SCORES', 'trophy', scores], ['sound', 'SOUND', 'sound', openSound]];
+    const row = [['courts', 'COURTS', 'bricks', () => go('courts')], ['scores', 'SCORES', 'trophy', scores], ['theme', 'THEME', 'theme', openTheme], ['sound', 'SOUND', 'sound', openSound]];
     row.forEach(([id, label, ic, fn], i) => {
       const cx = L.row.x + bw * (i + 0.5) + i * 5;
       if (L.tiles) tile(id, label, ic, cx, L.row.y + lift, bw, L.rh, fn);
@@ -1943,16 +1943,16 @@ function titleLayout() {
   if (wide) {
     const cw = Math.min(206, Math.floor((W - 48) / 2));
     const x = Math.round((W - cw * 2 - 8) / 2);
-    const bw = Math.min(84, Math.floor((cw * 2 + 8 - 10) / 3));
-    const rx = Math.round(W / 2 - (bw * 3 + 10) / 2);
-    const clear = rx + bw * 3 + 10 < sig.x - 4; // the row passes left of the signature
+    const bw = Math.min(84, Math.floor((cw * 2 + 8 - 15) / 4));
+    const rx = Math.round(W / 2 - (bw * 4 + 15) / 2);
+    const clear = rx + bw * 4 + 15 < sig.x - 4; // the row passes left of the signature
     const limit = (clear ? H - 6 : sig.y - 4) - (ch + 4 + rowGap + 19);
     const top = Math.max(P.wb + 6, Math.min(P.wb + 40 + Math.round(H * 0.04), limit));
     return { cw, ch, bw, a: { x, y: top }, b: { x: x + cw + 8, y: top }, row: { x: rx, y: top + ch + 4 + rowGap } };
   }
   const cw = Math.min(208, W - 24);
   const x = Math.round((W - cw) / 2);
-  const bw = Math.floor((cw - 10) / 3);
+  const bw = Math.floor((cw - 15) / 4);
   const tiles = tall; // room for icon-over-label tiles
   const rh = tiles ? 28 : 17;
   const total = (ch + 4) * 2 + gap + rowGap + rh + 2;

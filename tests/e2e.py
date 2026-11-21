@@ -411,7 +411,7 @@ def desktop(browser, url):
     d.screen("title", 1.4)
     d.shot("02-title")
     ids = d.ev("__court.ui.regions.map(r=>r.id).join()")
-    check("landing screen: the two cards (The Rally, Multiplayer), then Courts, Scores and Sound", ids == "play,multiplayer,courts,scores,sound", ids)
+    check("landing screen: the two cards (The Rally, Multiplayer), then Courts, Scores, Theme and Sound", ids == "play,multiplayer,courts,scores,theme,sound", ids)
     # The row under the cards opens what it says.
     d.click("scores")
     d.screen("scores", 0.6)
