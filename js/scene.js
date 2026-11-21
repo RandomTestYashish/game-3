@@ -77,14 +77,49 @@ export function buildLayers() {
   for (let i = 0; i < Math.round(W / 22); i++) flies.push({ x: rnd() * W, y: rnd(), p: rnd() * 6.28, f: 0.5 + rnd() });
   petals = [];
   for (let i = 0; i < Math.round(W / 14); i++) petals.push({ x: rnd() * W, y: rnd(), p: rnd() * 6.28, v: 5 + rnd() * 7, k: rnd() });
-  // Build every country now, so none is built in the middle of a frame later.
-  for (const c of COUNTRIES) layersFor({ countryId: c.id, backgroundPalette: c.bg });
+  // Every country at 1x now (light, for the theme picker's pictures); the one
+  // on screen is painted again at the screen's resolution when it's needed.
+  for (const c of COUNTRIES) previewLayers({ countryId: c.id, backgroundPalette: c.bg });
+  hd = new Map();
   if (theme) L = layersFor(theme);
 }
 
+// Backgrounds at the screen's resolution (HD), the last few kept. Very wide
+// screens paint them at 2x at most, to keep memory in hand.
+let hd = new Map();
+const layerK = () => Math.min(K, W > 400 ? 2 : 3);
 export function layersFor(t) {
-  return cache[t.countryId] || (cache[t.countryId] = makeLayers(t.countryId, t.backgroundPalette));
+  const k = layerK();
+  if (k === 1) return previewLayers(t);
+  const key = t.countryId + '|' + k;
+  let l = hd.get(key);
+  if (l) {
+    hd.delete(key);
+    hd.set(key, l); // most recently used last
+    return l;
+  }
+  l = makeLayers(t.countryId, t.backgroundPalette, k);
+  hd.set(key, l);
+  while (hd.size > 3) hd.delete(hd.keys().next().value);
+  return l;
 }
+function previewLayers(t) {
+  return cache[t.countryId] || (cache[t.countryId] = makeLayers(t.countryId, t.backgroundPalette, 1));
+}
+
+// A background layer: painted in logical pixels on a canvas with k device
+// pixels each; lw / lh / k ride on the canvas for drawing it back.
+function bgLayer(w, h, k) {
+  const x = makeLayer(w * k, h * k);
+  if (k > 1) x.setTransform(k, 0, 0, k, 0, 0);
+  x.__k = k;
+  x.canvas.lw = w;
+  x.canvas.lh = h;
+  x.canvas.k = k;
+  return x;
+}
+const put = (c, dx, dy) => ctx.drawImage(c, dx, dy, c.lw, c.lh);
+const putPart = (c, sx, sy, sw, sh, dx, dy, dw, dh) => ctx.drawImage(c, sx * c.k, sy * c.k, sw * c.k, sh * c.k, dx, dy, dw, dh);
 
 // Switch theme. A change of country or surface cross-fades over ~350 ms.
 // Both scenes are drawn live during the fade, from the same camera, so
@@ -108,19 +143,19 @@ export const currentTheme = () => theme;
 // A small picture of a theme for the theme picker: its sky, landmarks and
 // trees, and a little court in its normal colours.
 export function drawThemePreview(t, x, y, w, h) {
-  const Lt = layersFor(t);
+  const Lt = previewLayers(t);
   const mid = M + Math.round(W / 2);
   const gy = Math.round(y + h * 0.6);
-  const skyH = Lt.sky.height;
-  ctx.drawImage(Lt.sky, 0, skyH * 0.25, W, skyH * 0.75, x, y, w, gy - y);
+  const skyH = Lt.sky.lh;
+  putPart(Lt.sky, 0, skyH * 0.25, W, skyH * 0.75, x, y, w, gy - y);
   const span = 230;
   const sc = w / span;
   const hh = Math.round(HILL_H * sc);
-  ctx.drawImage(Lt.hills, mid - span / 2, 0, span, HILL_H, x, gy - hh + 3, w, hh);
+  putPart(Lt.hills, mid - span / 2, 0, span, HILL_H, x, gy - hh + 3, w, hh);
   const lh = Math.round(LAND_H * sc);
-  ctx.drawImage(Lt.land, mid - span / 2, 0, span, LAND_H, x, gy - lh + 2, w, lh);
+  putPart(Lt.land, mid - span / 2, 0, span, LAND_H, x, gy - lh + 2, w, lh);
   const th = Math.round(96 * sc);
-  ctx.drawImage(Lt.trees, mid - span / 2, 0, span, 96, x, gy - th + 4, w, th);
+  putPart(Lt.trees, mid - span / 2, 0, span, 96, x, gy - th + 4, w, th);
   const cp = t.courtPalette;
   for (let yy = gy; yy < y + h; yy++) rect(x, yy, w, 1, Math.floor((yy - gy) / 3) % 2 ? cp.alt : cp.court);
   const cx = x + w / 2;
@@ -132,7 +167,7 @@ export function drawThemePreview(t, x, y, w, h) {
   rect(cx, gy + 1, 1, Math.round((y + h - gy) * 0.5), t.courtLineColor);
 }
 
-function makeLayers(id, T) {
+function makeLayers(id, T, k = 1) {
   // Building draws into scratch layers; put back whatever was being drawn to
   // (a panel mid-animation, say), or the rest of that frame lands elsewhere.
   const was = ctx;
@@ -146,18 +181,31 @@ function makeLayers(id, T) {
   const skyH = Math.round(0.58 * H) + 14;
   // Written straight into pixels: drawing it one rectangle per pixel froze
   // the game for a moment the first time a country appeared.
-  const sky = makeLayer(W, skyH);
-  const img = sky.createImageData(W, skyH);
+  const sky = bgLayer(W, skyH, k);
+  const SW = W * k;
+  const SH = skyH * k;
+  const img = sky.createImageData(SW, SH);
   const px = new Uint32Array(img.data.buffer);
-  const rgba = SKY.map((hex) => {
+  const rgbOf = (hex) => {
     const n = parseInt(hex.slice(1), 16);
-    return (255 << 24) | ((n & 255) << 16) | (((n >> 8) & 255) << 8) | (n >> 16); // little-endian ABGR
-  });
-  for (let y = 0; y < skyH; y++) {
-    const f = Math.pow(y / (skyH - 1), 1.25) * (SKY.length - 1);
+    return [n >> 16, (n >> 8) & 255, n & 255];
+  };
+  const pack = (r, g, b) => (255 << 24) | (b << 16) | (g << 8) | r; // little-endian ABGR
+  const rgb = SKY.map(rgbOf);
+  const rgba = rgb.map(([r, g, b]) => pack(r, g, b));
+  for (let y = 0; y < SH; y++) {
+    const f = Math.pow(y / (SH - 1), 1.25) * (SKY.length - 1);
     const i = Math.min(SKY.length - 2, Math.floor(f));
     const frac = Math.max(0, Math.min(1, (f - i - 0.3) / 0.4));
-    for (let x = 0; x < W; x++) px[y * W + x] = bayer(x, y) < frac ? rgba[i + 1] : rgba[i];
+    if (k > 1) {
+      // HD: a smooth blend between the bands instead of the dither.
+      const a = rgb[i];
+      const b = rgb[i + 1];
+      const c = pack(Math.round(a[0] + (b[0] - a[0]) * frac), Math.round(a[1] + (b[1] - a[1]) * frac), Math.round(a[2] + (b[2] - a[2]) * frac));
+      px.fill(c, y * SW, (y + 1) * SW);
+    } else {
+      for (let x = 0; x < W; x++) px[y * W + x] = bayer(x, y) < frac ? rgba[i + 1] : rgba[i];
+    }
   }
   sky.putImageData(img, 0, 0);
   out.sky = sky.canvas;
@@ -166,7 +214,7 @@ function makeLayers(id, T) {
 
   // Clouds drift on their own wrapping strip.
   const cw = W + 90;
-  const clouds = makeLayer(cw, skyH);
+  const clouds = bgLayer(cw, skyH, k);
   setTarget(clouds);
   for (let i = 0; i < Math.round(cw / 34); i++) {
     const y = 6 + rnd() * skyH * 0.62;
@@ -180,7 +228,7 @@ function makeLayers(id, T) {
   out.clouds = clouds.canvas;
 
   // Distant hills, and whatever stands far off on them.
-  const hills = makeLayer(LW, HILL_H);
+  const hills = bgLayer(LW, HILL_H, k);
   setTarget(hills);
   if (id === 'japan') fuji(mid + 34, HILL_H, T);
   for (let x = 0; x < LW; x++) {
@@ -195,7 +243,7 @@ function makeLayers(id, T) {
   out.hills = hills.canvas;
 
   // Landmarks, between the hills and the trees.
-  const land = makeLayer(LW, LAND_H);
+  const land = bgLayer(LW, LAND_H, k);
   setTarget(land);
   if (id === 'japan') {
     pagoda(mid - 58, LAND_H);
@@ -226,7 +274,7 @@ function makeLayers(id, T) {
   out.land = land.canvas;
 
   // Trees: kept to the sides so the landmarks show between them.
-  const trees = makeLayer(LW, 96);
+  const trees = bgLayer(LW, 96, k);
   setTarget(trees);
   const tc = T.trees;
   const cypress = (x, h, w) => {
@@ -267,7 +315,7 @@ function makeLayers(id, T) {
   const wc = T.wall;
   const wy = LAYER_H - WALL_H;
   const paintWall = (rnd, pillars) => {
-    const wall = makeLayer(LW, LAYER_H);
+    const wall = bgLayer(LW, LAYER_H, k);
     setTarget(wall);
     for (let x = 0; x < LW; x++) {
       const top = wy - 24 + Math.round(Math.sin(x * 0.4) * 0.6 + rnd() * 1.4);
@@ -318,7 +366,7 @@ function makeLayers(id, T) {
   out.wall = paintWall(rnd, lanterns);
 
   // Foreground canopy framing the top corners (blossom in Japan).
-  const fore = makeLayer(LW, 190);
+  const fore = bgLayer(LW, 190, k);
   setTarget(fore);
   const leaf = T.blossom ? ['#7a2f57', '#b8507f', T.blossom[2], '#5c2242'] : ['#102b1b', '#17402a', '#245a34', '#0b2014'];
   const canopy = (cx, cy, n, spread) => {
@@ -343,7 +391,7 @@ function makeLayers(id, T) {
   out.fore = fore.canvas;
 
   // Bushes in the bottom corners, drawn over the grass during play.
-  const bushes = makeLayer(80, 44);
+  const bushes = bgLayer(80, 44, k);
   setTarget(bushes);
   for (let i = 0; i < 9; i++) {
     const x = 6 + rnd() * 44;
@@ -843,10 +891,10 @@ const wrap = (v, n) => ((v % n) + n) % n;
 // The whole gradient is fitted between the top of the screen and the
 // horizon, so each theme's sunset colours show in play as well as in menus.
 function drawSky(time, skyY, ref, horizon) {
-  const sh = L.sky.height;
+  const sh = L.sky.lh;
   const dh = Math.max(40, Math.round(horizon - skyY));
   const k = dh / sh;
-  ctx.drawImage(L.sky, 0, 0, W, sh, 0, skyY, W, dh);
+  putPart(L.sky, 0, 0, W, sh, 0, skyY, W, dh);
   drawSun(horizon);
   for (const s of L.stars) {
     const tw = Math.sin(time * s.f + s.p);
@@ -854,10 +902,10 @@ function drawSky(time, skyY, ref, horizon) {
     if (tw > -0.3) rect(s.x, sy, 1, 1, tw > 0.75 ? '#ffffff' : '#cdbfe0');
     if (tw > 0.93) rect(s.x - 1, sy, 3, 1, '#cdbfe0');
   }
-  const cw = L.clouds.width;
+  const cw = L.clouds.lw;
   const cx0 = -wrap(time * 3.6 - P.shift * P.sRef, cw);
-  ctx.drawImage(L.clouds, 0, 0, cw, sh, Math.round(cx0), skyY, cw, dh);
-  ctx.drawImage(L.clouds, 0, 0, cw, sh, Math.round(cx0) + cw, skyY, cw, dh);
+  putPart(L.clouds, 0, 0, cw, sh, Math.round(cx0), skyY, cw, dh);
+  putPart(L.clouds, 0, 0, cw, sh, Math.round(cx0) + cw, skyY, cw, dh);
   const bt = wrap(time, 23);
   if (bt < 14) {
     const flap = Math.floor(time * 5) & 1;
@@ -913,11 +961,11 @@ function drawSceneOnce(time) {
   drawSky(time, Math.round(-cam * 12), wb, wb - WALL_H - 18);
 
   const wallTop = wb - WALL_H;
-  ctx.drawImage(L.hills, -M + hillS, Math.round(wallTop - HILL_H - 30 + cam * 16));
+  put(L.hills, -M + hillS, Math.round(wallTop - HILL_H - 30 + cam * 16));
   const landS = Math.round(P.shift * (P.sRef - sFar * 0.45));
-  ctx.drawImage(L.land, -M + landS, Math.round(wallTop - LAND_H - 22 + cam * 4));
-  ctx.drawImage(L.trees, -M + treeS, Math.round(wallTop - 96 - 12 + cam * 9));
-  ctx.drawImage(L.wall, -M + wallS, wb - LAYER_H);
+  put(L.land, -M + landS, Math.round(wallTop - LAND_H - 22 + cam * 4));
+  put(L.trees, -M + treeS, Math.round(wallTop - 96 - 12 + cam * 9));
+  put(L.wall, -M + wallS, wb - LAYER_H);
   if (P.banner) {
     drawStands(time);
     drawBanner(time);
@@ -1036,17 +1084,17 @@ function drawSceneOnce(time) {
 
   if (cam > 0.45 && P.landing < 1 && !P.banner) {
     ctx.globalAlpha = Math.min(1, (cam - 0.45) / 0.3);
-    const bh = L.bushes.height;
-    ctx.drawImage(L.bushes, -12, H - bh + 6);
+    const bh = L.bushes.lh;
+    put(L.bushes, -12, H - bh + 6);
     ctx.save();
     ctx.scale(-1, 1);
-    ctx.drawImage(L.bushes, -W - 12, H - bh + 8);
+    put(L.bushes, -W - 12, H - bh + 8);
     ctx.restore();
     ctx.globalAlpha = 1;
   }
 
   const sway = Math.round(Math.sin(time * 0.8) * 1.4);
-  if (P.landing < 1) ctx.drawImage(L.fore, -M + sway - Math.round(P.shift * 0.5), Math.round(-cam * 34 - 4 - P.landing * 110));
+  if (P.landing < 1) put(L.fore, -M + sway - Math.round(P.shift * 0.5), Math.round(-cam * 34 - 4 - P.landing * 110));
 }
 
 // A low sun on the horizon (or a moon high up on a Black Court).

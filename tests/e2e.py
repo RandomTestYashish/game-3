@@ -379,7 +379,7 @@ class Driver:
         self.wait(f"__court.ui.regions.some(r=>r.id==='{rid}')")
         return self.ev(
             "(()=>{const r=__court.ui.regions.find(r=>r.id==='%s');const c=document.getElementById('court').getBoundingClientRect();"
-            "const k=c.width/document.getElementById('court').width;return [c.left+(r.x+r.w/2)*k,c.top+(r.y+r.h/2)*k]})()" % rid
+            "const k=c.width/__court.size()[0];return [c.left+(r.x+r.w/2)*k,c.top+(r.y+r.h/2)*k]})()" % rid
         )
 
     def click(self, rid):
