@@ -150,17 +150,20 @@ export function rect(x, y, w, h, c) {
 // Smooth fill of an ellipse centred on the middle of logical pixel (cx, cy),
 // one device row at a time.
 function smoothEllipse(cx, cy, rx, ry, k) {
-  const ox = snap(cx, k) + 0.5;
-  const oy = snap(cy, k) + 0.5;
-  rx += 0.45;
-  ry += 0.45;
-  const n = Math.ceil(ry * k);
-  for (let j = -n; j < n; j++) {
-    const dy = (j + 0.5) / k;
-    const q = 1 - (dy * dy) / (ry * ry);
+  // Worked in device pixels, so every row and edge lands exactly on the
+  // screen's pixel grid (no half-covered, see-through rows).
+  const ox = (snap(cx, k) + 0.5) * k;
+  const oy = (snap(cy, k) + 0.5) * k;
+  const rxd = (rx + 0.45) * k;
+  const ryd = (ry + 0.45) * k;
+  for (let yd = Math.floor(oy - ryd); yd < Math.ceil(oy + ryd); yd++) {
+    const dy = yd + 0.5 - oy;
+    const q = 1 - (dy * dy) / (ryd * ryd);
     if (q <= 0) continue;
-    const hw = Math.round(Math.sqrt(q) * rx * k) / k;
-    ctx.fillRect(ox - hw, oy + j / k, hw * 2, 1 / k);
+    const hw = Math.sqrt(q) * rxd;
+    const l = Math.round(ox - hw);
+    const r = Math.round(ox + hw);
+    if (r > l) ctx.fillRect(l / k, yd / k, (r - l) / k, 1 / k);
   }
 }
 
@@ -185,6 +188,15 @@ export function disc(cx, cy, r, c) {
 }
 
 export function ring(cx, cy, r, c) {
+  if (kNow() > 1) {
+    // HD: a smooth ring, one pixel thick, centred like the pixel ring.
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(Math.round(cx) + 0.5, Math.round(cy) + 0.5, r, 0, Math.PI * 2);
+    ctx.stroke();
+    return;
+  }
   cx = Math.round(cx);
   cy = Math.round(cy);
   ctx.fillStyle = c;
@@ -871,10 +883,106 @@ export function smoothDraw(key, x, y, w, h, fn) {
   ctx.drawImage(cv, x, y, w, h);
 }
 
+// The power-ups as smooth vector pictures for HD, each in the same 11 x 11
+// box as its pixel icon (origin at the box's top left).
+const VECTOR_ICONS = {
+  shield(c) {
+    c.beginPath();
+    c.moveTo(1, 0.6);
+    c.lineTo(10, 0.6);
+    c.lineTo(10, 5.4);
+    c.bezierCurveTo(10, 8.3, 7.6, 9.8, 5.5, 10.9);
+    c.bezierCurveTo(3.4, 9.8, 1, 8.3, 1, 5.4);
+    c.closePath();
+    c.fill();
+    c.fillStyle = PAL.panel; // the cross on it
+    c.fillRect(4.8, 2.2, 1.4, 5.2);
+    c.fillRect(3.1, 3.9, 4.8, 1.4);
+  },
+  multiball(c) {
+    for (const [x, y, r] of [[5.5, 2.6, 2.3], [2.6, 7.6, 2.5], [8.4, 7.6, 2.5]]) {
+      c.beginPath();
+      c.arc(x, y, r, 0, Math.PI * 2);
+      c.fill();
+    }
+  },
+  smash(c) {
+    c.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 - Math.PI / 2;
+      const r = i % 2 ? 2.2 : i % 4 ? 4.2 : 5.5;
+      c.lineTo(5.5 + Math.cos(a) * r, 5.5 + Math.sin(a) * r);
+    }
+    c.closePath();
+    c.fill();
+  },
+  freeze(c, col) {
+    c.strokeStyle = col;
+    c.lineCap = 'round';
+    c.lineWidth = 1.1;
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI + Math.PI / 2;
+      const dx = Math.cos(a) * 4.9;
+      const dy = Math.sin(a) * 4.9;
+      c.beginPath();
+      c.moveTo(5.5 - dx, 5.5 - dy);
+      c.lineTo(5.5 + dx, 5.5 + dy);
+      c.stroke();
+      for (const e of [-1, 1]) {
+        // little branches near each tip
+        const bx = 5.5 + e * dx * 0.62;
+        const by = 5.5 + e * dy * 0.62;
+        for (const t of [-0.75, 0.75]) {
+          c.beginPath();
+          c.moveTo(bx, by);
+          c.lineTo(bx + Math.cos(a + (e > 0 ? 0 : Math.PI) + t) * 1.7, by + Math.sin(a + (e > 0 ? 0 : Math.PI) + t) * 1.7);
+          c.stroke();
+        }
+      }
+    }
+  },
+  expand(c) {
+    c.fillRect(2.6, 4.6, 5.8, 1.8);
+    for (const e of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(5.5 + e * 5.3, 5.5);
+      c.lineTo(5.5 + e * 2.4, 2.1);
+      c.lineTo(5.5 + e * 2.4, 8.9);
+      c.closePath();
+      c.fill();
+    }
+  },
+  lowgrav(c) {
+    // A feather, drifting.
+    c.save();
+    c.translate(5.6, 5.2);
+    c.rotate(0.7);
+    c.beginPath();
+    c.ellipse(0, -0.6, 2.5, 4.8, 0, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    c.strokeStyle = PAL.panel;
+    c.lineWidth = 0.7;
+    c.beginPath();
+    c.moveTo(2.3, 9.4);
+    c.lineTo(8.6, 2.2);
+    c.stroke();
+  },
+};
+
 export function icon(name, x, y, c, scale = 1) {
   const g = ICONS[name];
   if (!g) return;
   const k = kNow();
+  if (k > 1 && VECTOR_ICONS[name]) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (scale !== 1) ctx.scale(scale, scale);
+    ctx.fillStyle = c;
+    VECTOR_ICONS[name](ctx, c);
+    ctx.restore();
+    return;
+  }
   if (k > 1 && /^#[0-9a-fA-F]{6}$/.test(c)) {
     const sp = smoothSprite(g, '#', c, Math.min(4, k * scale));
     ctx.drawImage(sp.canvas, Math.round(x), Math.round(y), sp.w * scale, sp.h * scale);

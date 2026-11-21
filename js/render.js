@@ -1,6 +1,6 @@
 // Draws a Game into the projected court, plus the in-play HUD.
 
-import { W, ctx, PAL, rect, disc, ring, rrect, text, textW, serif, serifW, icon } from './gfx.js';
+import { W, K, ctx, PAL, rect, disc, ring, rrect, text, textW, serif, serifW, icon } from './gfx.js';
 import { proj, drawBlock, drawBall, drawPaddle, drawShadow, MAT } from './scene.js';
 
 // A ball's radius and its resting hop height (js/game.js), for placing the bar.
@@ -134,7 +134,12 @@ export function drawHUD(g, levelLabel) {
     const cx = x + 11 + i * 8;
     if (i < g.lives) {
       disc(cx, 22, 3, PAL.yellow);
-      rect(cx - 1, 20, 1, 1, PAL.yellowHi);
+      if (K > 1) {
+        ctx.fillStyle = PAL.yellowHi; // HD: a soft round glint
+        ctx.beginPath();
+        ctx.arc(cx - 0.4, 21.3, 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      } else rect(cx - 1, 20, 1, 1, PAL.yellowHi);
     } else {
       ring(cx, 22, 3, PAL.yellowLo);
     }
