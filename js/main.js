@@ -1016,10 +1016,10 @@ const SCREENS = {
     drawLogo(top, false);
     rect(W / 2 - 22, top + 58, 44, 1, PAL.cream);
     const p = S.ready ? clamp(S.t / 1.2, 0, 1) : clamp(S.t / 1.2, 0, 0.85);
-    const cy = Math.max(top + 84, titleLayout().a.y + 6);
-    drawLoadBar(cy, p);
+    const cy = Math.max(top + 76, titleLayout().a.y - 4);
+    drawRallyLoader(cy, p, 'LOADING');
     const tip = LOADING_TIPS[S.tip % LOADING_TIPS.length];
-    wrap(tip, Math.min(200, W - 24)).forEach((l, i) => text(l, W / 2, cy + 24 + i * 10, PAL.cream, { align: 'center', shadow: PAL.ink }));
+    wrap(tip, Math.min(200, W - 24)).forEach((l, i) => text(l, W / 2, cy + 64 + i * 10, PAL.cream, { align: 'center', shadow: PAL.ink }));
     ctx.globalAlpha = 1;
   },
 
@@ -1082,8 +1082,8 @@ const SCREENS = {
   },
 
   intro(k) {
-    // The landing's THE RALLY card comes up into the middle, GET READY counts
-    // its dots, and the loading bar fills before the courts.
+    // The landing's THE RALLY card comes up into the middle, then the rally
+    // loader (GET READY and its count) runs before the courts.
     ctx.globalAlpha = k;
     const L = titleLayout();
     const cw = L.cw;
@@ -1092,14 +1092,8 @@ const SCREENS = {
     const q = clamp(S.t / 0.45, 0, 1);
     ctx.globalAlpha = k * Math.min(1, q * 2);
     card('introcard', 'THE RALLY', null, x, y + Math.round((1 - easeBack(q)) * 24), cw, L.ch, afterIntro, { t: S.time, art: cardArt.ball });
-    const fade = k * clamp((S.t - 0.35) / 0.3, 0, 1);
-    const pw = Math.min(150, W - 60) + 28;
-    ctx.globalAlpha = fade * 0.82; // a dark plate, so the words read over any skyline
-    rrect(Math.round(W / 2 - pw / 2), y + L.ch + 14, pw, 46, 6, '#06120c');
-    ctx.globalAlpha = fade;
-    const dots = '.'.repeat(Math.floor(S.time * 3) % 4);
-    text('GET READY' + dots, W / 2 - textW('GET READY...', 1, 2) / 2, y + L.ch + 22, PAL.cream, { sp: 2, shadow: PAL.ink });
-    drawLoadBar(y + L.ch + 46, clamp((S.t - 0.3) / 2.1, 0, 1));
+    ctx.globalAlpha = k * clamp((S.t - 0.35) / 0.3, 0, 1);
+    drawRallyLoader(y + L.ch + 14, clamp((S.t - 0.3) / 2.1, 0, 1), 'GET READY');
     ctx.globalAlpha = 1;
     const skip = afterIntro;
     region('skip', 0, 0, W, H, skip);
@@ -1916,21 +1910,70 @@ function drawLogo(top, wave, color = PAL.cream, shadow = '#000000') {
   }
 }
 
-// The loading bar (p from 0 to 1), with the ball rolling along its end.
-function drawLoadBar(cy, p) {
-  const bw = Math.min(150, W - 60);
-  const bx = Math.round(W / 2 - bw / 2);
-  rrect(bx - 2, cy - 2, bw + 4, 11, 4, PAL.ink);
-  rrect(bx - 1, cy - 1, bw + 2, 9, 3, '#5f7a64');
-  rect(bx, cy, bw, 7, '#0d1f16');
-  const fill = Math.round(bw * p);
-  rect(bx, cy, fill, 7, PAL.yellow);
-  rect(bx, cy, fill, 1, PAL.yellowHi);
-  for (let gx = bx + 4; gx < bx + fill - 4; gx += 6) rect(gx, cy + 1, 2, 5, PAL.yellowLo); // segments
-  const bxp = clamp(bx + fill, bx + 5, bx + bw - 5);
-  const hop = Math.round(Math.abs(Math.sin(S.time * 7)) * 2);
-  drawShadow(bxp, cy + 4, 4, 1, 0.35);
-  drawBall(bxp, cy - 3 - hop, 5);
+// The rally loader: a little side-on court on a dark plate, two black bars
+// hitting a ball over the net, and LOADING 64% (label and p from 0 to 1)
+// under it in the scoreboard's colours.
+function drawRallyLoader(cy, p, label) {
+  const bw = Math.min(176, W - 40);
+  const x0 = Math.round(W / 2 - bw / 2);
+  const a0 = ctx.globalAlpha;
+  // The plate and the court.
+  rrect(x0 - 2, cy - 2, bw + 4, 58, 7, PAL.ink);
+  rrect(x0 - 1, cy - 1, bw + 2, 56, 6, '#5f7a64');
+  rrect(x0, cy, bw, 54, 5, '#0d1f16');
+  const gy = cy + 34; // the ground line
+  rect(x0 + 6, gy, bw - 12, 5, '#2f6b45');
+  rect(x0 + 6, gy, bw - 12, 1, PAL.cream);
+  for (let gx = x0 + 10; gx < x0 + bw - 10; gx += 8) rect(gx, gy + 3, 4, 1, '#3c7d52');
+  const nx = Math.round(W / 2);
+  rect(nx, gy - 9, 1, 9, '#c9d3c3'); // the net: a post, a white band, the mesh
+  rect(nx - 1, gy - 10, 3, 1, PAL.cream);
+  for (let ny = gy - 8; ny < gy; ny += 2) rect(nx - 1, ny, 3, 1, '#7d8a80');
+  // The two bars, a hop up as the ball reaches each.
+  const lx = x0 + 18;
+  const rx = x0 + bw - 18;
+  const leg = 0.55;
+  const i = Math.floor(S.time / leg);
+  const u = (S.time % leg) / leg;
+  const from = i % 2 ? rx : lx;
+  const to = i % 2 ? lx : rx;
+  const by = gy - 5;
+  const bar = (cx, near) => {
+    const lift = near ? Math.round((1 - near) * 2) : 0;
+    rrect(cx - 10, by - 4 - lift, 20, 8, 4, '#8d96a3'); // a pale rim, as on a Black Court
+    rrect(cx - 9, by - 3 - lift, 18, 6, 3, '#0d0f12');
+    rect(cx - 7, by - 3 - lift, 14, 1, '#4a505b');
+    rect(cx - 7, by + 1 - lift, 14, 1, PAL.yellow);
+  };
+  bar(lx, from === lx && u < 0.2 ? u / 0.2 : 0);
+  bar(rx, from === rx && u < 0.2 ? u / 0.2 : 0);
+  // The ball: an arc over the net, a fading trail, its shadow on the ground.
+  const at = (v) => ({ x: lerp(from, to, v), y: by - 8 - Math.sin(v * Math.PI) * 16 });
+  for (let v = Math.max(0, u - 0.3); v < u; v += 0.06) {
+    const q = at(v);
+    ctx.globalAlpha = a0 * (0.15 + 0.6 * (1 - (u - v) / 0.3));
+    rect(q.x, q.y, 2, 2, PAL.yellow);
+  }
+  ctx.globalAlpha = a0;
+  const b = at(u);
+  drawShadow(b.x, gy + 1, 3, 1, 0.4);
+  drawBall(b.x, b.y, 4);
+  if (u < 0.2 && i > 0) {
+    for (let sk = 0; sk < 5; sk++) {
+      const ang = Math.PI * (1.1 + sk * 0.2);
+      const r = 4 + u * 30;
+      ctx.globalAlpha = a0 * (1 - u * 5);
+      rect(from + Math.cos(ang) * r, by - 5 + Math.sin(ang) * r, 1, 1, sk % 2 ? '#ffffff' : PAL.yellow);
+    }
+    ctx.globalAlpha = a0;
+  }
+  // LOADING 64%: the label in cream, the count in yellow.
+  const pct = Math.round(clamp(p, 0, 1) * 100) + '%';
+  const lw = textW(label, 1, 2);
+  const tw = lw + 6 + textW('100%', 1, 1);
+  const tx = Math.round(W / 2 - tw / 2);
+  text(label, tx, cy + 43, PAL.cream, { sp: 2 });
+  text(pct, tx + lw + 6, cy + 43, PAL.yellow, { sp: 1 });
 }
 
 function titleLayout() {
