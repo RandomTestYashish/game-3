@@ -66,7 +66,7 @@ export function drawGame(g, time) {
       const g0 = proj(d.x, d.y);
       const p = proj(d.x, d.y, 7 + Math.sin(d.t * 6) * 2);
       drawShadow(g0.x, g0.y, 6, 2, 0.3);
-      toolBadge(d.type, p.x, p.y - 9, 9);
+      toolBadge(d.type, p.x, p.y - 8, 8);
     } else if (it.ball) {
       const ball = it.ball;
       const n = ball.trail.length;
@@ -156,12 +156,12 @@ export function drawHUD(g, levelLabel) {
   // Active tools with their remaining time.
   let ty = 27;
   const badge = (id, frac) => {
-    toolBadge(id, 14, ty + 9, 9);
+    toolBadge(id, 13, ty + 8, 8);
     if (frac != null) {
-      rect(5, ty + 20, 18, 3, PAL.ink);
-      rect(6, ty + 21, Math.ceil(16 * frac), 1, PAL.yellow);
+      rect(6, ty + 18, 15, 1, 'rgba(10, 26, 18, 0.6)');
+      rect(6, ty + 18, Math.ceil(15 * frac), 1, PAL.yellow);
     }
-    ty += 26;
+    ty += 23;
   };
   if (g.shield) badge('shield', null);
   for (const id in g.fx) if (g.fx[id] > 0) badge(id, g.fx[id] / TOOL_TIME[id]);

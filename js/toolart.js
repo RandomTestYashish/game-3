@@ -8,6 +8,7 @@ import { ctx, PAL, disc, icon } from './gfx.js';
 // comet, the arrows) comes down so its ends are not cut off by the circle.
 const FIT = { shield: 1.08, multiball: 0.92, smash: 0.8, freeze: 1.04, expand: 0.74, lowgrav: 0.96 };
 const BADGE = 96; // the cached badge's size in pixels
+const INNER = 0.8; // the art's circle, as a share of the badge's radius
 
 export const TOOL_ART = {};
 for (const id in FIT) {
@@ -31,12 +32,19 @@ function badge(id) {
   const b = c.getContext('2d');
   b.imageSmoothingEnabled = true;
   b.imageSmoothingQuality = 'high';
-  b.fillStyle = '#07150e';
+  // A soft see-through plate, so the court shows through a little.
+  b.fillStyle = 'rgba(24, 52, 39, 0.72)';
   b.beginPath();
   b.arc(BADGE / 2, BADGE / 2, BADGE / 2, 0, Math.PI * 2);
   b.fill();
+  // The art stays in an inner circle, clear of the rim. Screen blending drops
+  // the picture's dark backdrop and keeps the bright subject.
+  const inner = (BADGE / 2) * INNER;
+  b.beginPath();
+  b.arc(BADGE / 2, BADGE / 2, inner, 0, Math.PI * 2);
   b.clip();
-  const s = (BADGE / img.naturalHeight) * FIT[id];
+  b.globalCompositeOperation = 'screen';
+  const s = ((inner * 2) / img.naturalHeight) * FIT[id];
   const w = img.naturalWidth * s;
   const h = img.naturalHeight * s;
   b.drawImage(img, (BADGE - w) / 2, (BADGE - h) / 2, w, h);
@@ -46,7 +54,6 @@ function badge(id) {
 
 // A round tool badge with a gold rim, centred on (cx, cy).
 export function toolBadge(id, cx, cy, r) {
-  disc(cx, cy, r + 1, PAL.ink);
   const art = badge(id);
   if (art) {
     ctx.save();
@@ -59,7 +66,7 @@ export function toolBadge(id, cx, cy, r) {
     icon(id, Math.round(cx - 5), Math.round(cy - 5), PAL.yellow);
   }
   ctx.strokeStyle = PAL.yellow;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 0.6;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
