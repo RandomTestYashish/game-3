@@ -1,6 +1,6 @@
 // Boot, screen flow, input and the frame loop.
 
-import { W, H, K, hdTextOn, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, makeScreenLayer, resetTransform, rect, rrect, disc, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
+import { W, H, K, hdTextOn, ctx, PAL, initCanvas, setSize, setTarget, makeLayer, makeScreenLayer, resetTransform, rect, rrect, disc, ring, ellipse, line, text, textW, wrap, blockTitle, sparkle, racket, cup, METAL, trophy, laurel, rays, globe, serif, serifW, icon, clamp, lerp, easeOut, easeInOut, easeBack, checker } from './gfx.js';
 import { P, setCam, buildLayers, drawScene, setTheme, currentTheme, drawThemePreview, proj, unprojX, drawBlock, drawBall, drawShadow } from './scene.js';
 import { COUNTRIES, getCourtTheme } from './themes.js';
 import { Game, TOOLS, START_LIVES, RUSH_AT, MATCH_WEIGHTS } from './game.js';
@@ -1249,32 +1249,48 @@ const SCREENS = {
   },
 
   tools(k) {
-    const w = 204;
-    const h = 214;
+    const w = 220;
+    const h = 268;
     const x = Math.round((W - w) / 2);
     const y = Math.round((H - h) / 2);
     const begin = () => beginRun(S.level);
     const back = () => go('courts');
     panel(k, x, y, w, h, 'dark', () => {
-      serif('TOOLS', W / 2 + 3, y + 14, 16, PAL.cream, { align: 'center', sp: 5 });
-      rect(W / 2 - 12, y + 32, 24, 1, PAL.cream);
+      // The heading between two gold laurels, over a full-width rule.
+      serif('TOOLS', W / 2 + 3, y + 12, 17, PAL.cream, { align: 'center', sp: 5 });
+      laurel(W / 2 - 50, y + 21, 11, -1, 4, '#b8922e', PAL.yellow);
+      laurel(W / 2 + 50, y + 21, 11, 1, 4, '#b8922e', PAL.yellow);
+      rect(x + 14, y + 37, w - 28, 1, PAL.creamLo);
+      // Six tiles: the art, the name on a pill, and what it does.
       TOOLS.forEach((t, i) => {
-        const cx = x + 38 + (i % 3) * 64;
-        const cy = y + 58 + Math.floor(i / 3) * 52;
-        const sel = S.tool === i;
+        const tx = x + 10 + (i % 3) * 68;
+        const ty = y + 44 + Math.floor(i / 3) * 74;
         const id = 'tool' + i;
-        disc(cx, cy, 17, sel || ui.hover === id ? PAL.yellow : PAL.cream);
-        disc(cx, cy, 16, PAL.panel);
-        if (sel) disc(cx, cy, 14, PAL.panelHi);
-        icon(t.id, cx - 11, cy - 11, PAL.yellow, 2);
-        text(t.name, cx, cy + 22, sel ? PAL.yellow : PAL.cream, { align: 'center', sp: t.name.length > 9 ? 0 : 1 });
-        region(id, cx - 24, cy - 20, 48, 50, () => (S.tool = i));
+        const sel = S.tool === i;
+        const edge = sel || ui.hover === id ? PAL.yellow : '#7f927c';
+        rrect(tx, ty, 64, 46, 7, edge);
+        rrect(tx + 1, ty + 1, 62, 44, 6, '#07150e');
+        drawToolArt(t, tx + 1, ty + 1, 62, 38);
+        rrect(tx, ty + 38, 64, 14, 6, sel ? PAL.yellow : PAL.cream);
+        rrect(tx + 1, ty + 39, 62, 12, 5, sel ? PAL.yellow : PAL.panel);
+        text(t.name, tx + 32, ty + 42, sel ? PAL.ink : PAL.cream, { align: 'center', sp: t.name.length > 9 ? 0 : 1 });
+        const [a, b] = TOOL_NOTES[t.id];
+        text(a, tx + 32, ty + 55, sel ? PAL.cream : '#b9c7b2', { align: 'center', sp: 0 });
+        text(b, tx + 32, ty + 63, sel ? PAL.cream : '#b9c7b2', { align: 'center', sp: 0 });
+        region(id, tx, ty, 64, 71, () => (S.tool = i));
       });
+      // The chosen tool, in full.
       const t = TOOLS[S.tool];
-      text(t.desc[0], W / 2, y + 144, PAL.dim, { align: 'center' });
-      text(t.desc[1], W / 2, y + 154, PAL.dim, { align: 'center' });
-      pill('begin', 'BEGIN', W / 2 + 22, y + h - 40, 112, 21, begin, { scale: 2, sp: 3 });
-      ghost('back', 'BACK', x + 36, y + h - 36, 44, 15, back);
+      const by = y + 193;
+      rrect(x + 12, by, w - 24, 27, 7, '#7f927c');
+      rrect(x + 13, by + 1, w - 26, 25, 6, '#0b2017');
+      ring(x + 27, by + 13, 7, PAL.yellow);
+      rect(x + 27, by + 9, 2, 2, PAL.yellow);
+      rect(x + 27, by + 12, 2, 6, PAL.yellow);
+      text(t.desc[0], x + 41, by + 6, PAL.cream, { sp: 0 });
+      text(t.desc[1], x + 41, by + 15, PAL.cream, { sp: 0 });
+      ghost('back', 'BACK', x + 41, y + h - 40, 58, 22, back);
+      pill('begin', 'BEGIN', x + 144, y + h - 41, 130, 23, begin, { scale: 2, sp: 3 });
     });
     S.primary = begin;
     S.back = back;
@@ -1988,6 +2004,39 @@ function drawKeepyUppy(cy, p) {
   const lw = 64;
   rect(cx - lw / 2, hy + 22, lw, 1, '#3f5545');
   rect(cx - lw / 2, hy + 22, Math.round(lw * clamp(p, 0, 1)), 1, PAL.yellow);
+}
+
+// The Tools screen: painted art for each tool (the plain icon until it loads)
+// and two short lines saying what it does.
+const TOOL_NOTES = {
+  shield: ['SAVES', 'ONE BALL'],
+  multiball: ['SPLITS BALLS', 'INTO THREE'],
+  smash: ['TEARS THROUGH', 'EVERY BLOCK'],
+  freeze: ['STOPS BLOCKS,', 'ONE HIT BREAKS'],
+  expand: ['A WIDER', 'PADDLE'],
+  lowgrav: ['BALLS DRIFT', 'DOWN SLOWLY'],
+};
+const TOOL_ART = {};
+for (const t of TOOLS) {
+  TOOL_ART[t.id] = new Image();
+  TOOL_ART[t.id].src = `assets/tools/${t.id}.png`;
+}
+function drawToolArt(t, x, y, w, h) {
+  const img = TOOL_ART[t.id];
+  if (!img.complete || !img.naturalWidth) {
+    icon(t.id, x + w / 2 - 11, y + h / 2 - 11, PAL.yellow, 2);
+    return;
+  }
+  // Fit by height, centred, inside the tile's rounded corners.
+  const dw = Math.min(w, (h * img.naturalWidth) / img.naturalHeight);
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h + 6, 6);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, x + (w - dw) / 2, y, dw, h);
+  ctx.restore();
 }
 
 // After THE RALLY: a gold line closes a circle with the ball running at its
