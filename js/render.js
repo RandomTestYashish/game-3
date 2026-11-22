@@ -1,7 +1,8 @@
 // Draws a Game into the projected court, plus the in-play HUD.
 
-import { W, K, ctx, PAL, rect, disc, ring, rrect, text, textW, serif, serifW, icon } from './gfx.js';
+import { W, K, ctx, PAL, rect, disc, ring, rrect, text, textW, serif, serifW } from './gfx.js';
 import { proj, drawBlock, drawBall, drawPaddle, drawShadow, MAT } from './scene.js';
+import { toolBadge } from './toolart.js';
 
 // A ball's radius and its resting hop height (js/game.js), for placing the bar.
 const BALL_REST_R = 4;
@@ -65,10 +66,7 @@ export function drawGame(g, time) {
       const g0 = proj(d.x, d.y);
       const p = proj(d.x, d.y, 7 + Math.sin(d.t * 6) * 2);
       drawShadow(g0.x, g0.y, 6, 2, 0.3);
-      disc(p.x, p.y - 7, 8, PAL.ink);
-      disc(p.x, p.y - 7, 7, PAL.panel);
-      ring(p.x, p.y - 7, 7, PAL.yellow);
-      icon(d.type, p.x - 5, p.y - 12, PAL.yellow);
+      toolBadge(d.type, p.x, p.y - 9, 9);
     } else if (it.ball) {
       const ball = it.ball;
       const n = ball.trail.length;
@@ -158,14 +156,12 @@ export function drawHUD(g, levelLabel) {
   // Active tools with their remaining time.
   let ty = 27;
   const badge = (id, frac) => {
-    disc(13, ty + 7, 8, PAL.ink);
-    disc(13, ty + 7, 7, PAL.panel);
-    icon(id, 8, ty + 2, PAL.yellow);
+    toolBadge(id, 14, ty + 9, 9);
     if (frac != null) {
-      rect(5, ty + 17, 17, 3, PAL.ink);
-      rect(6, ty + 18, Math.ceil(15 * frac), 1, PAL.yellow);
+      rect(5, ty + 20, 18, 3, PAL.ink);
+      rect(6, ty + 21, Math.ceil(16 * frac), 1, PAL.yellow);
     }
-    ty += 23;
+    ty += 26;
   };
   if (g.shield) badge('shield', null);
   for (const id in g.fx) if (g.fx[id] > 0) badge(id, g.fx[id] / TOOL_TIME[id]);

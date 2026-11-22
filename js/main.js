@@ -7,6 +7,7 @@ import { Game, TOOLS, START_LIVES, RUSH_AT, MATCH_WEIGHTS } from './game.js';
 import { sections } from './rules.js';
 import { LEVELS, matchLevel } from './levels.js';
 import { drawGame, drawHUD, hudRows } from './render.js';
+import { TOOL_ART, toolArtReady, toolBadge } from './toolart.js';
 import { ui, beginUI, region, hitTest, pill, ghost, card, tile, cardArt, roundBtn, iconBtn, slider, panel } from './ui.js';
 import { AudioSys, COURT_TRACKS, RUSH_TEMPO } from './audio.js';
 import { haptics } from './haptics.js';
@@ -1867,9 +1868,7 @@ function drawRulesOverlay(k) {
       } else if (card.showRows) {
         sec.rows.forEach((r, i) => {
           const ry = ty + i * 19;
-          disc(cx + 13, ry + 8, 8, '#2f6b47');
-          disc(cx + 13, ry + 8, 7, PAL.panel);
-          icon(r.id, cx + 8, ry + 3, PAL.yellow);
+          toolBadge(r.id, cx + 13, ry + 8, 8);
           text(r.name, cx + 26, ry + 1, PAL.cream, { sp: 1 });
           text(r.left, cx + 26, ry + 10, '#9fb7a2', { sp: 0 });
           const pw = textW(r.right, 1, 0) + 6;
@@ -2016,17 +2015,12 @@ const TOOL_NOTES = {
   expand: ['A WIDER', 'PADDLE'],
   lowgrav: ['BALLS DRIFT', 'DOWN SLOWLY'],
 };
-const TOOL_ART = {};
-for (const t of TOOLS) {
-  TOOL_ART[t.id] = new Image();
-  TOOL_ART[t.id].src = `assets/tools/${t.id}.png`;
-}
 function drawToolArt(t, x, y, w, h) {
-  const img = TOOL_ART[t.id];
-  if (!img.complete || !img.naturalWidth) {
+  if (!toolArtReady(t.id)) {
     icon(t.id, x + w / 2 - 11, y + h / 2 - 11, PAL.yellow, 2);
     return;
   }
+  const img = TOOL_ART[t.id];
   // Fit by height, centred, inside the tile's rounded corners.
   const dw = Math.min(w, (h * img.naturalWidth) / img.naturalHeight);
   ctx.save();
