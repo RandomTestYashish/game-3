@@ -1145,7 +1145,7 @@ const SCREENS = {
     ctx.globalAlpha = k * Math.min(1, q * 2);
     card('introcard', 'THE RALLY', null, x, y + Math.round((1 - easeBack(q)) * 24), cw, L.ch, afterIntro, { t: S.time, art: cardArt.ball });
     ctx.globalAlpha = k * clamp((S.t - 0.35) / 0.3, 0, 1);
-    drawKeepyUppy(y + L.ch + 22, clamp((S.t - 0.3) / 2.1, 0, 1));
+    drawRallyLoader(y + L.ch + 22, clamp((S.t - 0.3) / 2.1, 0, 1));
     ctx.globalAlpha = 1;
     const skip = afterIntro;
     region('skip', 0, 0, W, H, skip);
@@ -1988,6 +1988,47 @@ function drawKeepyUppy(cy, p) {
   const lw = 64;
   rect(cx - lw / 2, hy + 22, lw, 1, '#3f5545');
   rect(cx - lw / 2, hy + 22, Math.round(lw * clamp(p, 0, 1)), 1, PAL.yellow);
+}
+
+// After THE RALLY: a gold line closes a circle with the ball running at its
+// head, over three short lines from the court. top is the top of the circle.
+const RALLY_LINES = ['CHALKING THE LINES', 'THE CROWD SETTLES', 'QUIET, PLEASE'];
+function drawRallyLoader(top, p) {
+  const a0 = ctx.globalAlpha;
+  const r = 21;
+  const cx = Math.round(W / 2);
+  const cy = top + r + 3;
+  const eased = p * p * (3 - 2 * p);
+  const start = -Math.PI / 2;
+  const at = (q) => [cx + Math.cos(start + q * Math.PI * 2) * r, cy + Math.sin(start + q * Math.PI * 2) * r];
+  const dots = 96;
+  // A soft dark plate, so the circle and words read over every city.
+  const pw = Math.max(...RALLY_LINES.map((s) => textW(s, 1, 1))) + 26;
+  ctx.globalAlpha = a0 * 0.62;
+  rrect(Math.round(cx - pw / 2), top - 7, Math.round(pw), r * 2 + 37, 8, PAL.ink);
+  // The track, then the gold line, brightest near the ball.
+  for (let i = 0; i < dots; i++) {
+    const q = i / dots;
+    const [x, y] = at(q);
+    if (q <= eased) {
+      ctx.globalAlpha = a0 * (0.55 + 0.45 * clamp(1 - (eased - q) / 0.35, 0, 1));
+      disc(x, y, 1.2, PAL.yellow);
+    } else {
+      ctx.globalAlpha = a0 * 0.75;
+      disc(x, y, 0.7, '#3f5545');
+    }
+  }
+  ctx.globalAlpha = a0;
+  const [bx, by] = at(eased);
+  drawBall(bx, by, 4);
+  // One line at a time, each fading in and out; the last one stays.
+  const n = RALLY_LINES.length;
+  const i = Math.min(n - 1, Math.floor(p * n));
+  const u = p * n - i;
+  const fade = i === n - 1 ? clamp(u / 0.2, 0, 1) : clamp(u / 0.2, 0, 1) * clamp((1 - u) / 0.2, 0, 1);
+  ctx.globalAlpha = a0 * fade;
+  text(RALLY_LINES[i], W / 2, cy + r + 13, PAL.cream, { align: 'center', shadow: PAL.ink, sp: 1 });
+  ctx.globalAlpha = a0;
 }
 
 function titleLayout() {
